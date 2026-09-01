@@ -70,8 +70,7 @@ export function updateMinimap() {
 export function syncMinimapViewportBox() {
   if (state.viewMode === "outliner" || !viewportBox || !viewport) return;
 
-  const viewScreenW = viewport.offsetWidth;
-  const viewScreenH = viewport.offsetHeight;
+  const viewScreenW = window.innerWidth; const viewScreenH = window.innerHeight;
 
   const camWorldL = (-camera.transform.x) / camera.transform.scale;
   const camWorldT = (-camera.transform.y) / camera.transform.scale;
@@ -84,8 +83,7 @@ export function syncMinimapViewportBox() {
   const boxH = camWorldH * cachedScaleRatio;
 
   viewportBox.style.transform = `translate3d(${boxL}px, ${boxT}px, 0)`;
-  viewportBox.style.width = `${Math.max(10, boxW)}px`;
-  viewportBox.style.height = `${Math.max(8, boxH)}px`;
+  viewportBox.style.width=`${Math.max(10,boxW)}px`;viewportBox.style.height=`${Math.max(8,boxH)}px`;
 }
 
 if (minimapWidget) {

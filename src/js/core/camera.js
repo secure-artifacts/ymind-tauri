@@ -13,10 +13,6 @@ export const camera = {
 
 window.__CAMERA_TRANSFORM__ = camera.transform;
 
-const viewportGroup = document.getElementById("viewport-group");
-const viewport = document.getElementById("viewport");
-
-// 🌟 GPU 硬件 3D 合成层 + 视差微网格联动加速
 export function requestTransformUpdate() {
   if (camera.isTransformPending) return;
   camera.isTransformPending = true;
@@ -25,35 +21,17 @@ export function requestTransformUpdate() {
     const y = camera.transform.y;
     const s = camera.transform.scale;
 
-    if (viewportGroup) {
-      viewportGroup.style.transform = `translate3d(${x}px, ${y}px, 0px) scale(${s})`;
-    }
-
-    if (viewport) {
-      const baseGrid = 24 * s;
-      const posX = ((x % baseGrid) + baseGrid) % baseGrid;
-      const posY = ((y % baseGrid) + baseGrid) % baseGrid;
-      viewport.style.backgroundPosition = `${posX}px ${posY}px`;
-      viewport.style.backgroundSize = `${baseGrid}px ${baseGrid}px`;
-    }
+    const targetEl = document.getElementById("canvas-stage"); if (targetEl) { targetEl.setAttribute("transform", "translate(" + x + " " + y + ") scale(" + s + ")"); }
 
     syncMinimapViewportBox();
     camera.isTransformPending = false;
 
-    // 🌟 当平移或缩放位移超过流式缓冲区阈值时，自动触发流式节点剔除重组
     const dist = Math.hypot(x - lastCullCam.x, y - lastCullCam.y) / s;
     const scaleDiff = Math.abs(s - lastCullCam.scale) / lastCullCam.scale;
-    if (dist > 160 || scaleDiff > 0.15) {
-      lastCullCam = { x, y, scale: s };
-      clearTimeout(cullTimer);
-      cullTimer = setTimeout(() => {
-        if (window.__RENDER_APP__) window.__RENDER_APP__();
-      }, 40);
-    }
+    // 禁用平移期间的 DOM 暴力清空，保持极致丝滑与完整呈现
   });
 }
 
-// 🌟 紧致跟手的 Apple 级微惯性阻尼引擎 (Friction 0.86，快速平稳收敛)
 export function startInertiaMomentum(vx, vy) {
   if (camera.inertiaAnimationId) cancelAnimationFrame(camera.inertiaAnimationId);
 
@@ -123,7 +101,8 @@ export function smoothPanTo(targetX, targetY, targetScale = camera.transform.sca
 export function smartCenterOnSelectedNode(state, animated = true) {
   const targetNode = getPrimarySelectedNode();
   let anchor = targetNode;
-  if (!anchor || !viewport) return;
+  const vp = document.getElementById("viewport");
+  if (!anchor || !vp) return;
 
   const hasExpandedChildren = anchor.children && anchor.children.length > 0 && !anchor.collapsed;
   if (!hasExpandedChildren && anchor.id !== state.focusedRootId) {
@@ -131,7 +110,7 @@ export function smartCenterOnSelectedNode(state, animated = true) {
     if (parent) anchor = parent;
   }
 
-  const rect = viewport.getBoundingClientRect();
+  const rect = vp.getBoundingClientRect();
   const targetScreenX = rect.width * 0.35;
   const targetScreenY = rect.height * 0.5;
 

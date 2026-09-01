@@ -510,20 +510,17 @@ export function initEventListeners(renderApp) {
   bindClick("btn-zoom-in", () => {
     stopAllCameraAnimations();
     camera.transform.scale = Math.min(3.5, camera.transform.scale * 1.25);
-    requestTransformUpdate();
-    syncInspectorUi();
+    requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;
   });
   bindClick("btn-zoom-out", () => {
     stopAllCameraAnimations();
     camera.transform.scale = Math.max(0.15, camera.transform.scale / 1.25);
-    requestTransformUpdate();
-    syncInspectorUi();
+    requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;
   });
   bindClick("txt-zoom-level", () => {
     stopAllCameraAnimations();
     camera.transform.scale = 1.0;
-    requestTransformUpdate();
-    syncInspectorUi();
+    requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;
     smartCenterOnSelectedNode(state, true);
   });
   bindClick("btn-smart-center", () => smartCenterOnSelectedNode(state, true));
@@ -545,6 +542,8 @@ export function initEventListeners(renderApp) {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveMindMapFile(true); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveMindMapFile(false); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); openLocalFile(); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
     if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
     if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
     if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
@@ -741,33 +740,38 @@ export function initEventListeners(renderApp) {
       createFloatingNode(worldX, worldY);
     });
 
-    viewport.addEventListener("wheel", (e) => {
-      if (state.editingNodeId) {
-        const editor = document.getElementById("inline-editor");
-        if (editor && !editor.classList.contains("hidden")) editor.blur();
-        return;
-      }
-      stopAllCameraAnimations();
-      e.preventDefault();
-      const rect = viewport.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      const prevScale = camera.transform.scale;
-      const zoomFactor = Math.exp(-e.deltaY * 0.0018);
-      const newScale = Math.min(Math.max(0.15, prevScale * zoomFactor), 3.5);
-
-      camera.transform.x = mouseX - (mouseX - camera.transform.x) * (newScale / prevScale);
-      camera.transform.y = mouseY - (mouseY - camera.transform.y) * (newScale / prevScale);
-      camera.transform.scale = newScale;
-
-      requestTransformUpdate();
-      syncInspectorUi();
-    }, { passive: false });
+    let vw=window.innerWidth,vh=window.innerHeight;window.addEventListener("resize",()=>{vw=window.innerWidth;vh=window.innerHeight;});viewport.addEventListener("wheel",(e)=>{if(state.editingNodeId){const ed=document.getElementById("inline-editor");if(ed&&!ed.classList.contains("hidden"))ed.blur();return;}stopAllCameraAnimations();e.preventDefault();if(e.ctrlKey||e.metaKey||Math.abs(e.deltaX)>0&&!e.shiftKey){if(e.ctrlKey||e.metaKey){const rect=viewport.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const prev=camera.transform.scale;const factor=Math.exp(-e.deltaY*0.006);const ns=Math.min(Math.max(0.15,prev*factor),3.5);camera.transform.x=mx-(mx-camera.transform.x)*(ns/prev);camera.transform.y=my-(my-camera.transform.y)*(ns/prev);camera.transform.scale=ns;}else{camera.transform.x-=e.deltaX;camera.transform.y-=e.deltaY;}}else{const rect=viewport.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const prev=camera.transform.scale;const delta=Math.sign(e.deltaY)*Math.min(Math.abs(e.deltaY),40);const factor=Math.exp(-delta*0.0035);const ns=Math.min(Math.max(0.15,prev*factor),3.5);camera.transform.x=mx-(mx-camera.transform.x)*(ns/prev);camera.transform.y=my-(my-camera.transform.y)*(ns/prev);camera.transform.scale=ns;}requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;},{passive:false});
   }
 
   bindClick("btn-mode-mindmap", () => switchViewMode("mindmap"));
   bindClick("btn-mode-outliner", () => switchViewMode("outliner"));
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
   bindClick("btn-mode-flashcards", openFlashcardModal);
   bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
   bindClick("btn-open-full-icons", () => {

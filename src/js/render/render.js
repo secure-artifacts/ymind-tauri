@@ -11,7 +11,7 @@ export function getCullBounds(viewportEl, cam, overscan = 800) {
   const s = cam.scale || 1;
   const w = viewportEl.offsetWidth || window.innerWidth;
   const h = viewportEl.offsetHeight || window.innerHeight;
-  const pad = overscan / s;
+  const pad = Math.min(overscan, overscan * s);
   return {
     left: (-cam.x) / s - pad,
     top: (-cam.y) / s - pad,
@@ -86,11 +86,7 @@ export function updateSelectionStyles(state) {
 
 export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme = false, cullBounds = null) {
   // 🌟 分支级包围盒判定：如果整棵子树都在视口外部，直接 $O(1)$ 瞬时跳过！
-  if (cullBounds && node.treeMinX !== undefined) {
-    if (!isBoxOverlap(node.treeMinX, node.treeMinY, node.treeMaxX, node.treeMaxY, cullBounds)) {
-      return;
-    }
-  }
+  // 保持全景节点完整渲染，杜绝视锥截断与白屏穿模
   const isRootOfView = node.id === state.focusedRootId;
   const isSelected = state.selectedIds.has(node.id);
   const lineStyle = state.lineStyle || "curve";
