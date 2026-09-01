@@ -36,7 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -66,11 +66,9 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/jammy.list || true
           sudo apt-get update || true
 
-      # 修复：全局安装指定版本的 Tauri v1 CLI（无需 package.json）
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@^1.6.0
 
-      # 编译各平台安装包
       - name: Build Tauri app
         run: tauri build ${{ matrix.args }}
 
@@ -102,27 +100,17 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      # 为所有平台的安装包生成 Attestation 安全证明
+      # 修复：使用通配符对 release-assets 目录下的全部生成文件自动签名
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: |
-            release-assets/*.msi
-            release-assets/*.exe
-            release-assets/*.dmg
-            release-assets/*.deb
-            release-assets/*.AppImage
+          subject-path: 'release-assets/*'
 
-      # 原子化一次性创建 Release
+      # 原子化一次性创建 Release 并上传安装包
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-assets/*.msi
-            release-assets/*.exe
-            release-assets/*.dmg
-            release-assets/*.deb
-            release-assets/*.AppImage
+          files: 'release-assets/*'
           name: 'YMind Pro ${{ github.ref_name }}'
           draft: false
           prerelease: false
