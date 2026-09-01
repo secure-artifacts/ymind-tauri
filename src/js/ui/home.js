@@ -21,30 +21,29 @@ export function getRecentDocs() {
 }
 
 export function recordRecentDoc(title, data, layout = "mindmap", filePath = null, styles = {}) {
-  // 🌟 异步微任务派发，绝不阻塞用户打开文档与画布首帧渲染
   setTimeout(() => {
     try {
-    let recents = getRecentDocs();
-    const existingIdx = recents.findIndex(r => r.title === title || (filePath && r.filePath === filePath));
-    const item = {
-      id: "doc_" + Date.now(),
-      title: title || "未命名导图",
-      filePath: filePath || (existingIdx >= 0 ? recents[existingIdx].filePath : null),
-      time: Date.now(),
-      layout: layout,
-      colorPalette: styles.colorPalette || (existingIdx >= 0 ? recents[existingIdx].colorPalette : "apple-classic"),
-      lineStyle: styles.lineStyle || (existingIdx >= 0 ? recents[existingIdx].lineStyle : "curve"),
-      boxStyle: styles.boxStyle || (existingIdx >= 0 ? recents[existingIdx].boxStyle : "squircle"),
-      canvasTheme: styles.canvasTheme || (existingIdx >= 0 ? recents[existingIdx].canvasTheme : "studio-light"),
-      starred: existingIdx >= 0 ? recents[existingIdx].starred : false,
-      nodeCount: countNodes(data),
-      data: JSON.parse(JSON.stringify(data))
-    };
+      let recents = getRecentDocs();
+      const existingIdx = recents.findIndex(r => r.title === title || (filePath && r.filePath === filePath));
+      const item = {
+        id: "doc_" + Date.now(),
+        title: title || "未命名导图",
+        filePath: filePath || (existingIdx >= 0 ? recents[existingIdx].filePath : null),
+        time: Date.now(),
+        layout: layout,
+        colorPalette: styles.colorPalette || (existingIdx >= 0 ? recents[existingIdx].colorPalette : "apple-classic"),
+        lineStyle: styles.lineStyle || (existingIdx >= 0 ? recents[existingIdx].lineStyle : "curve"),
+        boxStyle: styles.boxStyle || (existingIdx >= 0 ? recents[existingIdx].boxStyle : "squircle"),
+        canvasTheme: styles.canvasTheme || (existingIdx >= 0 ? recents[existingIdx].canvasTheme : "studio-light"),
+        starred: existingIdx >= 0 ? recents[existingIdx].starred : false,
+        nodeCount: countNodes(data),
+        data: JSON.parse(JSON.stringify(data))
+      };
 
-    if (existingIdx >= 0) recents.splice(existingIdx, 1);
-    recents.unshift(item);
-    if (recents.length > 30) recents.pop();
-    cachedRecentDocs = recents;
+      if (existingIdx >= 0) recents.splice(existingIdx, 1);
+      recents.unshift(item);
+      if (recents.length > 30) recents.pop();
+      cachedRecentDocs = recents;
       localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
     } catch (e) {
       console.warn("记录最近文档失败", e);
@@ -71,6 +70,7 @@ export function toggleStarDoc(docId, renderHome) {
 
 export function removeRecentDoc(docId, renderHome) {
   let recents = getRecentDocs().filter(r => r.id !== docId);
+  cachedRecentDocs = recents;
   localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
   renderHome();
 }
@@ -186,7 +186,6 @@ export function renderHomeHub(renderApp, openWorkspace) {
     const quickGrid = document.getElementById("home-quick-start");
     if (quickGrid) {
       quickGrid.innerHTML = "";
-      // 🌟 首位呈现《YMind Pro 全功能与实战全景指南》
       const top4 = [
         TEMPLATES["ymind-feature-tour"],
         TEMPLATES["mindmap-blank"],
@@ -285,7 +284,7 @@ function renderDocList(containerId, docs, renderApp, openWorkspace) {
           <span class="doc-dot">·</span>
           <span class="doc-badge">${layoutLabel}</span>
           <span class="doc-dot">·</span>
-          <span class="doc-count">${doc.nodeCount || 1} 个节点</span>
+          <span class="doc-count">${doc.nodeCount || 1} 个节点</span><span class="doc-dot">·</span><span class="doc-path" title="${doc.filePath || '本地草稿'}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${doc.filePath || '本地草稿'}</span>
         </div>
       </div>
       <div class="doc-actions">
@@ -325,11 +324,6 @@ export function initHomeEvents(renderApp, openWorkspace) {
       renderHomeHub(renderApp, openWorkspace);
     };
   });
-
-  const openFileBtn = document.getElementById("nav-btn-open-file");
-  if (openFileBtn) {
-    openFileBtn.onclick = () => { document.getElementById("btn-open")?.click(); };
-  }
 
   document.querySelectorAll(".gallery-tab").forEach(tab => {
     tab.onclick = () => {

@@ -1,5 +1,5 @@
-import { state, saveSnapshot, findNode, findParent } from '../core/state.js';
-import { smartCenterOnSelectedNode } from '../core/camera.js';
+import { state, saveSnapshot, findNode, findParent } from "../core/state.js";
+import { smartCenterOnSelectedNode } from "../core/camera.js";
 
 const menu = document.getElementById("apple-context-menu");
 let targetNodeId = null;
@@ -95,13 +95,6 @@ function handleMenuAction(action, renderApp) {
     smartCenterOnSelectedNode(state, true);
   } else if (action === "delete") {
     if (node.id === state.focusedRootId) return;
-    if (state.floatingNodes && state.floatingNodes.some(f => f.id === node.id)) {
-      state.floatingNodes = state.floatingNodes.filter(f => f.id !== node.id);
-      state.selectedIds = new Set([state.focusedRootId]);
-      saveSnapshot();
-      renderApp();
-      return;
-    }
     const parent = findParent(node.id, state.mindData);
     if (parent) {
       parent.children = parent.children.filter(c => c.id !== node.id);

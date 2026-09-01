@@ -1,5 +1,5 @@
-import { state, findNode } from '../core/state.js';
-import { camera, requestTransformUpdate } from '../core/camera.js';
+import { state, findNode } from "../core/state.js";
+import { camera, requestTransformUpdate } from "../core/camera.js";
 
 const minimapWidget = document.getElementById("minimap-widget");
 const minimapSvg = document.getElementById("minimap-svg");
@@ -27,7 +27,6 @@ export function updateMinimap() {
     if (n.children && !n.collapsed) n.children.forEach(scanBounds);
   }
   scanBounds(currentRoot);
-  if (state.floatingNodes) state.floatingNodes.forEach(scanBounds);
 
   if (minX === Infinity) return;
 
@@ -61,7 +60,6 @@ export function updateMinimap() {
     if (n.children && !n.collapsed) n.children.forEach(drawMiniNode);
   }
   drawMiniNode(currentRoot);
-  if (state.floatingNodes) state.floatingNodes.forEach(drawMiniNode);
 
   minimapSvg.innerHTML = rects.join("");
   syncMinimapViewportBox();
@@ -83,7 +81,8 @@ export function syncMinimapViewportBox() {
   const boxH = camWorldH * cachedScaleRatio;
 
   viewportBox.style.transform = `translate3d(${boxL}px, ${boxT}px, 0)`;
-  viewportBox.style.width=`${Math.max(10,boxW)}px`;viewportBox.style.height=`${Math.max(8,boxH)}px`;
+  viewportBox.style.width = `${Math.max(10, boxW)}px`;
+  viewportBox.style.height = `${Math.max(8, boxH)}px`;
 }
 
 if (minimapWidget) {

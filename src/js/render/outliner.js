@@ -1,5 +1,5 @@
-import { state, saveSnapshot, findParent } from '../core/state.js';
-import { PRIORITY_COLORS } from '../data/palettes.js';
+import { state, saveSnapshot, findParent } from "../core/state.js";
+import { PRIORITY_COLORS } from "../data/palettes.js";
 
 const outlinerContent = document.getElementById("outliner-content");
 
@@ -48,15 +48,6 @@ export function renderOutliner(renderApp) {
       listContainer.appendChild(createOutlinerNode(child, root, renderApp));
     });
     outlinerContent.appendChild(listContainer);
-  }
-  if (state.floatingNodes && state.floatingNodes.length > 0) {
-    state.floatingNodes.forEach(fNode => {
-      const fSec = document.createElement("div");
-      fSec.style.marginTop = "24px";
-      fSec.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--apple-blue);margin-bottom:8px;">💭 浮动主题分支</div>`;
-      fSec.appendChild(createOutlinerNode(fNode, { children: state.floatingNodes }, renderApp));
-      outlinerContent.appendChild(fSec);
-    });
   }
 }
 
@@ -218,7 +209,7 @@ function createOutlinerNode(node, parentNode, renderApp) {
 
 function focusNodeText(nodeId) {
   const item = document.querySelector(`.outliner-item[data-id="${nodeId}"] .outliner-text-input`) || 
-               document.querySelector(`.outliner-title-input`);
+               document.querySelector(".outliner-title-input");
   if (item) {
     item.focus();
     const range = document.createRange();

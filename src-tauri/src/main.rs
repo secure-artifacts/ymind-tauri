@@ -1,72 +1,52 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[derive(serde::Serialize)]
-struct OpenResult {
-    path: String,
-    content: String,
+use std::fs;
+use std::path::PathBuf;
+
+// 🌟 Rust 原生保存引擎：支持弹窗选目录保存 & 覆盖保存
+#[tauri::command]
+fn save_mindmap_file(path: Option<String>, default_name: String, content: String) -> Result<String, String> {
+    let target_path = match path {
+        Some(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => {
+            let file_path = rfd::FileDialog::new()
+                .set_file_name(&default_name)
+                .add_filter("YMind 思维导图 (*.ymind)", &["ymind", "mind", "json"])
+                .add_filter("所有文件 (*.*)", &["*"])
+                .save_file();
+
+            match file_path {
+                Some(p) => p,
+                None => return Ok("CANCELLED".to_string()),
+            }
+        }
+    };
+
+    fs::write(&target_path, content).map_err(|e| format!("写入文件失败: {}", e))?;
+    Ok(target_path.to_string_lossy().to_string())
 }
 
-// 1. 系统门户另存为（返回保存的完整路径）
+// 🌟 Rust 原生打开引擎：支持读取任意 .mind, .ymind, .json, .xmind
 #[tauri::command]
-fn save_file_dialog(
-    content: String,
-    filename: Option<String>,
-    file_name: Option<String>,
-    default_name: Option<String>,
-    default_path: Option<String>,
-    name: Option<String>,
-) -> Option<String> {
-    let target_name = filename
-        .or(file_name)
-        .or(default_name)
-        .or(default_path)
-        .or(name)
-        .unwrap_or_else(|| "思维导图.mind".to_string());
-
+fn open_mindmap_file() -> Result<Option<(String, String)>, String> {
     let file_path = rfd::FileDialog::new()
-        .add_filter("MindMap", &["mind", "json"])
-        .set_file_name(&target_name)
-        .save_file();
+        .add_filter("思维导图文件 (*.mind, *.ymind, *.json, *.xmind)", &["mind", "ymind", "json", "xmind"])
+        .add_filter("所有文件 (*.*)", &["*"])
+        .pick_file();
 
-    if let Some(path) = file_path {
-        if std::fs::write(&path, &content).is_ok() {
-            return Some(path.to_string_lossy().to_string());
+    match file_path {
+        Some(p) => {
+            let content = fs::read_to_string(&p).map_err(|e| format!("读取文件失败: {}", e))?;
+            Ok(Some((p.to_string_lossy().to_string(), content)))
         }
+        None => Ok(None),
     }
-    None
-}
-
-// 2. 已有文件直接原路径覆盖保存（无需弹窗）
-#[tauri::command]
-fn save_file_direct(path: String, content: String) -> bool {
-    std::fs::write(path, content).is_ok()
-}
-
-// 3. 打开文件（返回文件内容与路径）
-#[tauri::command]
-fn open_file_dialog() -> Option<OpenResult> {
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("MindMap", &["mind", "json"])
-        .pick_file()
-    {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            return Some(OpenResult {
-                path: path.to_string_lossy().to_string(),
-                content,
-            });
-        }
-    }
-    None
 }
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            save_file_dialog,
-            save_file_direct,
-            open_file_dialog
-        ])
+        .invoke_handler(tauri::generate_handler![save_mindmap_file, open_mindmap_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

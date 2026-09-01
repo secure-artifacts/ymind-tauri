@@ -48,7 +48,7 @@ export function openFlashcardModal() {
   const modal = document.getElementById("apple-flashcards-modal");
   if (!modal) return;
 
-  cardDeck = buildFlashcardDeck(state.mindData, state.floatingNodes || []);
+  cardDeck = buildFlashcardDeck(state.mindData);
   if (cardDeck.length === 0) {
     showToast("⚠️ 当前导图没有足够的分支节点可供生成抽认卡");
     return;
@@ -64,7 +64,7 @@ export function closeFlashcardModal() {
   document.getElementById("apple-flashcards-modal")?.classList.add("hidden");
 }
 
-function buildFlashcardDeck(rootNode, floatingRoots) {
+function buildFlashcardDeck(rootNode) {
   const deck = [];
   function scan(node, parentPath = []) {
     if (!node) return;
@@ -83,7 +83,6 @@ function buildFlashcardDeck(rootNode, floatingRoots) {
     if (node.children) node.children.forEach(c => scan(c, currentPath));
   }
   scan(rootNode, []);
-  (floatingRoots || []).forEach(f => scan(f, ["💭 浮动主题"]));
   return deck;
 }
 
@@ -100,7 +99,7 @@ function renderCurrentCard() {
   document.getElementById("card-front-title").innerText = (card.icon ? card.icon + " " : "") + card.title;
   document.getElementById("card-front-hint").innerText = card.children.length > 0 
     ? `💡 请在脑海中回想此主题下的 ${card.children.length} 个子要点及核心细节...` 
-    : `💡 请回想此节点的详细备注与背景信息...`;
+    : "💡 请回想此节点的详细备注与背景信息...";
 
   document.getElementById("card-back-title").innerText = (card.icon ? card.icon + " " : "") + card.title;
   
@@ -109,7 +108,7 @@ function renderCurrentCard() {
     backAnswerHtml += "<ul class=\"card-answer-list\">" + card.children.map(c => `<li>${c}</li>`).join("") + "</ul>";
   }
   if (card.note) {
-    backAnswerHtml += `<div class=\"card-answer-note\"><div class=\"card-note-badge\">📝 详细备注</div>${card.note.replace(/\n/g, "<br/>")}</div>`;
+    backAnswerHtml += `<div class="card-answer-note"><div class="card-note-badge">📝 详细备注</div>${card.note.replace(/\n/g, "<br/>")}</div>`;
   }
   document.getElementById("card-back-answers").innerHTML = backAnswerHtml;
 

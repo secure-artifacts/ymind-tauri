@@ -35,7 +35,7 @@
 #viewport:active { cursor: grabbing; }
 #svg-canvas { width: 100%; height: 100%; position: absolute; top: 0; left: 0; display: block; pointer-events: all; }
 #svg-infinite-bg { pointer-events: all; }
-#canvas-stage { transform-origin: 0 0; } #svg-canvas text, #svg-canvas path, #svg-canvas rect { shape-rendering: geometricPrecision; text-rendering: geometricPrecision; }
+#canvas-stage { transform-origin: 0 0; } #svg-canvas text, #svg-canvas path, #svg-canvas rect { shape-rendering: geometricPrecision; text-rendering: geometricPrecision; } #svg-canvas text, #svg-canvas path, #svg-canvas rect { shape-rendering: geometricPrecision; text-rendering: geometricPrecision; }
 .marquee-box { position: absolute; border: 1.5px solid rgba(0, 113, 227, 0.9) !important; background: rgba(0, 113, 227, 0.13) !important; border-radius: 8px !important; -webkit-corner-smoothing: 0.62; pointer-events: none !important; z-index: 999 !important; box-sizing: border-box !important; box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.45), 0 2px 14px rgba(0, 113, 227, 0.22) !important; backdrop-filter: blur(1.5px); display: block; }
 .marquee-box.hidden { display: none !important; }
 .canvas-floating-controls { position: absolute; right: 20px; bottom: 20px; z-index: 85; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); border-radius: 20px; padding: 4px 8px; display: flex; align-items: center; gap: 4px; }
@@ -83,8 +83,7 @@
 .outliner-text-input { flex: 1; outline: none; font-size: 13.5px; color: var(--text-primary); padding: 2px 4px; }
 .outliner-children { padding-left: 24px; display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
 
-.svg-node.is-floating { cursor: grab !important; }
-.svg-node.is-floating:active { cursor: grabbing !important; }
+
 
 /* 🌟 Apple HIG 三岛屿顶栏与右侧胶囊按钮样式 */
 .dock-capsule-btn { display: inline-flex; align-items: center; gap: 5px; background: rgba(0, 0, 0, 0.04); border: 1px solid rgba(0, 0, 0, 0.06); color: var(--text-secondary); border-radius: 14px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; outline: none; }

@@ -1,12 +1,13 @@
-import { TEMPLATES } from '../data/templates.js';
+import { TEMPLATES } from "../data/templates.js";
+import { invalidateFontCache } from "../geometry/layout.js";
 
 const SETTINGS_KEY = "YMIND_PRO_GLOBAL_SETTINGS";
 let cachedGlobalSettings = null;
 
 export function getDefaultSettings() {
   return {
-    fontEn: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue"',
-    fontZh: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    fontEn: "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Helvetica Neue\"",
+    fontZh: "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif",
     layout: "mindmap",
     palette: "apple-classic",
     lineStyle: "curve",
@@ -30,6 +31,7 @@ export function saveGlobalSettings(s) {
   cachedGlobalSettings = { ...s };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   applyGlobalTypography(s);
+  invalidateFontCache();
 }
 
 export function applyGlobalTypography(s = getGlobalSettings()) {
@@ -95,10 +97,6 @@ Object.defineProperties(state, {
     get() { return getActiveTab()?.password || null; },
     set(v) { const t = getActiveTab(); if (t) t.password = v; }
   },
-  floatingNodes: {
-    get() { return getActiveTab()?.floatingNodes || []; },
-    set(v) { const t = getActiveTab(); if (t) t.floatingNodes = v; }
-  },
   isRecallMode: {
     get() { return getActiveTab()?.isRecallMode || false; },
     set(v) { const t = getActiveTab(); if (t) t.isRecallMode = v; }
@@ -122,11 +120,14 @@ export function countNodes(node) {
 
 export function saveSnapshot() {
   const tab = getActiveTab();
-  if (!tab) return;
+  if (!tab || !tab.mindData) return;
+  const snapStr = JSON.stringify(tab.mindData);
+  if (!tab.history) { tab.history = []; tab.historyIndex = -1; }
+  if (tab.historyIndex >= 0 && tab.history[tab.historyIndex] === snapStr) return;
   if (tab.historyIndex < tab.history.length - 1) {
     tab.history.splice(tab.historyIndex + 1);
   }
-  tab.history.push(JSON.stringify({ mindData: tab.mindData, floatingNodes: tab.floatingNodes || [] }));
+  tab.history.push(snapStr);
   tab.isDirty = true;
   if (tab.history.length > 50) tab.history.shift();
   else tab.historyIndex++;
@@ -134,12 +135,11 @@ export function saveSnapshot() {
 
 export function undo(renderCallback) {
   const tab = getActiveTab();
-  if (!tab || tab.historyIndex <= 0) return;
+  if (!tab || !tab.history || tab.historyIndex <= 0) return;
   tab.historyIndex--;
   try {
     const parsed = JSON.parse(tab.history[tab.historyIndex]);
-    if (parsed.mindData) { tab.mindData = parsed.mindData; tab.floatingNodes = parsed.floatingNodes || []; }
-    else { tab.mindData = parsed; }
+    tab.mindData = parsed.mindData || parsed;
   } catch(e) {}
   cleanInvalidSelections();
   renderCallback();
@@ -147,12 +147,11 @@ export function undo(renderCallback) {
 
 export function redo(renderCallback) {
   const tab = getActiveTab();
-  if (!tab || tab.historyIndex >= tab.history.length - 1) return;
+  if (!tab || !tab.history || tab.historyIndex >= tab.history.length - 1) return;
   tab.historyIndex++;
   try {
     const parsed = JSON.parse(tab.history[tab.historyIndex]);
-    if (parsed.mindData) { tab.mindData = parsed.mindData; tab.floatingNodes = parsed.floatingNodes || []; }
-    else { tab.mindData = parsed; }
+    tab.mindData = parsed.mindData || parsed;
   } catch(e) {}
   cleanInvalidSelections();
   renderCallback();
@@ -168,7 +167,6 @@ export function cleanInvalidSelections() {
     if (n.children) n.children.forEach(check);
   }
   check(tab.mindData);
-  if (tab.floatingNodes) tab.floatingNodes.forEach(check);
   tab.selectedIds = valid.size > 0 ? valid : new Set([tab.focusedRootId]);
 }
 
@@ -178,12 +176,6 @@ export function findNode(id, node = state.mindData) {
   if (node.children) {
     for (let child of node.children) {
       const res = findNode(id, child);
-      if (res) return res;
-    }
-  }
-  if (node === state.mindData && state.floatingNodes) {
-    for (let f of state.floatingNodes) {
-      const res = findNode(id, f);
       if (res) return res;
     }
   }
@@ -197,12 +189,6 @@ export function findParent(id, node = state.mindData) {
     const res = findParent(id, child);
     if (res) return res;
   }
-  if (node === state.mindData && state.floatingNodes) {
-    for (let f of state.floatingNodes) {
-      const res = findParent(id, f);
-      if (res) return res;
-    }
-  }
   return null;
 }
 
@@ -212,12 +198,6 @@ export function getAncestors(targetId, node = state.mindData, path = []) {
   if (node.children) {
     for (let child of node.children) {
       const found = getAncestors(targetId, child, [...path, node]);
-      if (found) return found;
-    }
-  }
-  if (node === state.mindData && state.floatingNodes) {
-    for (let f of state.floatingNodes) {
-      const found = getAncestors(targetId, f, [...path, f]);
       if (found) return found;
     }
   }
@@ -272,7 +252,6 @@ export function createNewTab(templateId = "mindmap-blank") {
     canvasTheme: cfg.canvasTheme,
     viewMode: "mindmap",
     camera: { x: window.innerWidth / 3, y: window.innerHeight / 2 - 40, scale: 1 },
-    floatingNodes: [],
     isRecallMode: false,
     history: [JSON.stringify(tpl.data)],
     historyIndex: 0

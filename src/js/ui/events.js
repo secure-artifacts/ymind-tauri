@@ -1,28 +1,28 @@
-import { initNotesDrawer, openNotesDrawer } from './notes.js';
-import { initFlashcards, openFlashcardModal, toggleRecallMode } from './flashcards.js';
-import { state, saveSnapshot, undo, redo, findNode, findParent, getPrimarySelectedNode, getActiveTab, createNewTab } from '../core/state.js';
-import { camera, requestTransformUpdate, smartCenterOnSelectedNode, startInertiaMomentum, stopAllCameraAnimations } from '../core/camera.js';
-import { updateSelectionStyles, startEditNode } from '../render/render.js';
-import { encryptMindPayload, decryptMindPayload, isEncryptedPackage } from '../storage/crypto.js';
-import { recordRecentDoc } from './home.js';
-import { syncInspectorUi } from './inspector.js';
-import { serializeTabToPackage, deserializePackage } from '../core/serializer.js';
-import { appAlert, appConfirm, appPrompt, showToast } from './dialog.js';
-import { 
-  openVersionHistoryModal, 
-  closeVersionHistoryModal, 
-  renderHistoryList, 
-  createVersionSnapshot, 
-  clearAllSnapshots 
-} from '../storage/storage.js';
+import { initNotesDrawer, openNotesDrawer } from "./notes.js";
+import { initFlashcards, openFlashcardModal, toggleRecallMode } from "./flashcards.js";
+import { state, saveSnapshot, undo, redo, findNode, findParent, getPrimarySelectedNode, getActiveTab, createNewTab } from "../core/state.js";
+import { camera, requestTransformUpdate, smartCenterOnSelectedNode, startInertiaMomentum, stopAllCameraAnimations } from "../core/camera.js";
+import { updateSelectionStyles, startEditNode } from "../render/render.js";
+import { encryptMindPayload, decryptMindPayload, isEncryptedPackage } from "../storage/crypto.js";
+import { recordRecentDoc } from "./home.js";
+import { syncInspectorUi } from "./inspector.js";
+import { serializeTabToPackage, deserializePackage } from "../core/serializer.js";
+import { appAlert, appConfirm, appPrompt, showToast } from "./dialog.js";
+import { openVersionHistoryModal, closeVersionHistoryModal, renderHistoryList, createVersionSnapshot, clearAllSnapshots } from "../storage/storage.js";
 
-const invoke = window.__TAURI__ 
-  ? (window.__TAURI__.core?.invoke || window.__TAURI__.tauri?.invoke) 
-  : null;
+function getTauriInvoke() {
+  return window.__TAURI__?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.core?.invoke || null;
+}
 
 function bindClick(id, handler) {
   const el = document.getElementById(id);
-  if (el) el.onclick = handler;
+  if (el) {
+    el.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handler(e);
+    };
+  }
 }
 
 export function initEventListeners(renderApp) {
@@ -52,22 +52,16 @@ export function initEventListeners(renderApp) {
     if (!formatSidebar) return;
     if (openDirectly) {
       formatSidebar.classList.remove("collapsed");
-      if (btnToggleFormat) btnToggleFormat.classList.add("active");
+      btnToggleFormat?.classList.add("active");
     } else {
       const isCollapsed = formatSidebar.classList.toggle("collapsed");
-      if (btnToggleFormat) btnToggleFormat.classList.toggle("active", !isCollapsed);
+      btnToggleFormat?.classList.toggle("active", !isCollapsed);
     }
     syncInspectorUi();
   }
 
   if (btnToggleFormat) btnToggleFormat.onclick = () => toggleFormatSidebar();
   if (btnCloseFormat) btnCloseFormat.onclick = () => toggleFormatSidebar();
-
-  // 点击顶栏图标按钮时平滑打开右侧格式侧边栏并定位到图标区
-  bindClick("btn-icon-picker", () => {
-    toggleFormatSidebar(true);
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
 
   bindClick("btn-open-history", () => openVersionHistoryModal(renderApp));
   bindClick("nav-btn-history", () => openVersionHistoryModal(renderApp));
@@ -79,7 +73,7 @@ export function initEventListeners(renderApp) {
   }
 
   bindClick("btn-create-manual-snap", () => {
-    const snap = createVersionSnapshot(getActiveTab(), 'manual');
+    const snap = createVersionSnapshot(getActiveTab(), "manual");
     if (snap) {
       renderHistoryList(historySearchInput?.value || "", renderApp);
       showToast(`📸 已为「${snap.tabTitle}」拍摄独立快照！`);
@@ -100,81 +94,169 @@ export function initEventListeners(renderApp) {
     }
   });
 
+  // 🌟 1. 核心保存引擎：优先通过 Rust 原生写入磁盘
   async function saveMindMapFile(forceSaveAs = false) {
     const tab = getActiveTab();
-    if (!tab) return false;
-    let contentToSave = "";
-    const { filePackage, filenameWithExt, presetFilename } = serializeTabToPackage(tab);
+    if (!tab || !tab.mindData) {
+      showToast("⚠️ 未找到当前活跃导图");
+      return false;
+    }
 
+    const { filePackage, filenameWithExt } = serializeTabToPackage(tab);
+    const targetFileName = tab.fileName || filenameWithExt;
+    const targetPath = (!forceSaveAs && tab.filePath) ? tab.filePath : null;
+
+    let payload;
     try {
-      if (tab.isEncrypted && tab.password) {
-        const encryptedPackage = await encryptMindPayload(filePackage, tab.password);
-        contentToSave = JSON.stringify(encryptedPackage, null, 2);
-      } else {
-        contentToSave = JSON.stringify(filePackage, null, 2);
-      }
+      payload = tab.isEncrypted && tab.password
+        ? JSON.stringify(await encryptMindPayload(filePackage, tab.password), null, 2)
+        : JSON.stringify(filePackage, null, 2);
+    } catch (err) {
+      appAlert({ title: "数据打包失败", message: String(err.message || err), type: "error" });
+      return false;
+    }
 
-      if (!forceSaveAs && tab.filePath && invoke) {
-        const ok = await invoke("save_file_direct", { path: tab.filePath, content: contentToSave });
-        if (ok) {
-          tab.isDirty = false;
-          createVersionSnapshot(tab, 'manual');
-          recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, tab);
-          renderApp();
-          showToast(`💾 已保存至: ${tab.filePath.split(/[/\\]/).pop()}`);
-          return true;
-        }
-      }
-
-      if (invoke) {
-        const savedPath = await invoke("save_file_dialog", {
-          content: contentToSave, filename: filenameWithExt, file_name: filenameWithExt,
-          default_name: filenameWithExt, defaultName: filenameWithExt,
-          default_path: filenameWithExt, defaultPath: filenameWithExt, name: filenameWithExt
+    // 🦀 级别 1：调用 Rust 原生命令（100% 弹出系统原生选目录窗口并物理写入）
+    const invoke = getTauriInvoke();
+    if (typeof invoke === "function") {
+      try {
+        const savedPath = await invoke("save_mindmap_file", {
+          path: targetPath,
+          defaultName: targetFileName,
+          content: payload
         });
 
-        if (savedPath) {
-          tab.filePath = savedPath;
-          tab.title = savedPath.split(/[/\\]/).pop().replace(/\.[^/.]+$/, "");
-          tab.isDirty = false;
-          createVersionSnapshot(tab, 'manual');
-          recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, tab);
-          renderApp();
-          showToast(`✅ 已保存为: ${tab.title}`);
+        if (savedPath === "CANCELLED") {
+          return false; // 用户主动点击取消
+        }
+
+        if (savedPath && typeof savedPath === "string") {
+          finalizeSaveSuccess(tab, savedPath, null);
           return true;
         }
-      } else {
-        const blob = new Blob([contentToSave], { type: "application/json;charset=utf-8" });
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = blobUrl;
-        a.download = filenameWithExt;
-        document.body.appendChild(a);
-        a.click();
-        
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
-        }, 1500);
-
-        tab.title = presetFilename;
-        tab.isDirty = false;
-        createVersionSnapshot(tab, 'manual');
-        recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, tab);
-        renderApp();
-        showToast(`✅ 导图下载成功`);
-        return true;
+      } catch (rustErr) {
+        console.warn("Rust save failed, attempting web fallback:", rustErr);
       }
-    } catch (err) {
-      appAlert({ title: "保存失败", message: String(err), type: "error" });
     }
-    return false;
+
+    // 🌐 级别 2：纯 Web 浏览器环境
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: targetFileName,
+          types: [{ description: "思维导图文件 (*.ymind, *.mind, *.json)", accept: { "application/json": [".ymind", ".mind", ".json"] } }],
+          excludeAcceptAllOption: false
+        });
+        const writable = await handle.createWritable();
+        await writable.write(payload);
+        await writable.close();
+        finalizeSaveSuccess(tab, handle.name, handle);
+        return true;
+      } catch (err) {
+        if (err.name === "AbortError") return false;
+      }
+    }
+
+    // 📥 级别 3：通用下载兜底
+    try {
+      const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = targetFileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
+      finalizeSaveSuccess(tab, targetFileName, null);
+      return true;
+    } catch (e) {
+      appAlert({ title: "保存异常", message: String(e.message || e), type: "error" });
+      return false;
+    }
   }
 
-  async function loadFileContent(jsonText, defaultFileName = "本地思维导图", filePath = null) {
+  function finalizeSaveSuccess(tab, savedPathOrName, handle) {
+    if (handle) tab.fileHandle = handle;
+    if (savedPathOrName) {
+      tab.fileName = savedPathOrName.split(/[\\/\\]/).pop();
+      if (savedPathOrName.includes("/") || savedPathOrName.includes("\\")) {
+        tab.filePath = savedPathOrName;
+      }
+      const cleanName = tab.fileName.replace(/\.[^/.]+$/, "");
+      if (cleanName) tab.title = cleanName;
+    }
+    tab.isDirty = false;
+    createVersionSnapshot(tab, "manual");
+    recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, tab);
+    renderApp();
+    
+    const displayLabel = tab.fileName || tab.title || "思维导图.ymind";
+    showToast(`💾 导图已成功保存: ${displayLabel}`);
+  }
+
+  // 🌟 2. 核心打开引擎：优先通过 Rust 原生读取
+  async function openLocalFile() {
+    // 🦀 级别 1：调用 Rust 原生命令打开文件
+    const invoke = getTauriInvoke();
+    if (typeof invoke === "function") {
+      try {
+        const res = await invoke("open_mindmap_file");
+        if (res && Array.isArray(res) && res.length === 2) {
+          const [selectedPath, content] = res;
+          const rawName = selectedPath.split(/[\\/\\]/).pop();
+          const cleanName = rawName.replace(/\.[^/.]+$/, "");
+          await loadFileContent(content, cleanName, selectedPath, rawName, null);
+          return;
+        } else if (res === null) {
+          return; // 用户主动取消
+        }
+      } catch (rustErr) {
+        console.warn("Rust open failed, attempting web fallback:", rustErr);
+      }
+    }
+
+    // 🌐 级别 2：纯 Web 浏览器环境
+    if (typeof window.showOpenFilePicker === "function") {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          multiple: false,
+          types: [{
+            description: "所有思维导图文件 (*.mind, *.ymind, *.json, *.xmind)",
+            accept: {
+              "application/json": [".json", ".mind", ".ymind"],
+              "text/plain": [".json", ".mind", ".ymind", ".txt"],
+              "application/octet-stream": [".mind", ".ymind", ".xmind"]
+            }
+          }],
+          excludeAcceptAllOption: false
+        });
+        if (handle) {
+          const file = await handle.getFile();
+          const content = await file.text();
+          const cleanName = file.name.replace(/\.[^/.]+$/, "");
+          await loadFileContent(content, cleanName, null, file.name, handle);
+          return;
+        }
+      } catch (err) {
+        if (err.name === "AbortError") return;
+      }
+    }
+
+    // 📥 级别 3：HTML input 兜底
+    if (fileInput) {
+      fileInput.value = "";
+      fileInput.click();
+    }
+  }
+
+  // 🌟 3. 精准文件解析与防重复打开
+  async function loadFileContent(jsonText, defaultFileName = "本地思维导图", filePath = null, rawFileName = null, fileHandle = null) {
     try {
-      let parsed = JSON.parse(jsonText);
+      const cleanText = jsonText.trim().replace(/^\uFEFF/, "");
+      let parsed = JSON.parse(cleanText);
 
       if (isEncryptedPackage(parsed)) {
         const pwd = await appPrompt({
@@ -183,41 +265,59 @@ export function initEventListeners(renderApp) {
           inputType: "password",
           placeholder: "请输入密码..."
         });
-        if (!pwd) return;
+        if (!pwd) return false;
         try {
           parsed = await decryptMindPayload(parsed, pwd);
         } catch {
           await appAlert({ title: "解密失败", message: "密码错误或密文数据已被篡改，解密失败！", type: "error" });
-          return;
+          return false;
         }
       }
 
       const { fileDisplayName, loadedMindData, loadedLayout, loadedPalette, loadedLine, loadedBox, loadedTheme } = deserializePackage(parsed, defaultFileName, filePath);
 
-      if (!loadedMindData || typeof loadedMindData !== 'object' || (!loadedMindData.id && !loadedMindData.text)) {
+      if (!loadedMindData || typeof loadedMindData !== "object" || (!loadedMindData.id && !loadedMindData.text)) {
         await appAlert({ title: "文件格式不兼容", message: "未识别到有效的思维导图结构化树状数据。", type: "warning" });
-        return;
+        return false;
       }
 
-      const existingTab = state.tabs.find(t => (filePath && t.filePath === filePath) || (!filePath && t.title === fileDisplayName && JSON.stringify(t.mindData) === JSON.stringify(loadedMindData)));
+      // 重复打开同一个文件时，精准聚焦至已打开的标签页
+      const existingTab = state.tabs.find(t => {
+        if (filePath && t.filePath && t.filePath === filePath) return true;
+        if (rawFileName && ((t.fileHandle && t.fileHandle.name === rawFileName) || t.fileName === rawFileName)) return true;
+        if (fileHandle && t.fileHandle && t.fileHandle.name === fileHandle.name) return true;
+        if (t.title === fileDisplayName && !t.filePath && !t.fileHandle) return true;
+        return false;
+      });
 
       if (existingTab) {
         state.activeTabId = existingTab.id;
+        if (fileHandle) existingTab.fileHandle = fileHandle;
+        if (filePath) existingTab.filePath = filePath;
+        if (rawFileName) existingTab.fileName = rawFileName;
         camera.transform = existingTab.camera;
-        document.body.className = `theme-${existingTab.canvasTheme || 'studio-light'}`;
+        document.body.className = `theme-${existingTab.canvasTheme || "studio-light"}`;
         window.__SHOW_WORKSPACE__ ? window.__SHOW_WORKSPACE__() : renderApp();
         syncInspectorUi();
-        showToast(`📑 已切换至: ${fileDisplayName}`);
-        return;
+        smartCenterOnSelectedNode(state, true);
+        showToast(`📑 已切换至已打开的导图: ${fileDisplayName}`);
+        return true;
       }
 
+      // 如果当前仅有一个未编辑的空白初始标签，则直接在当前标签加载
       const currentTab = getActiveTab();
-      const targetTab = (state.tabs.length === 1 && !currentTab.isDirty && !currentTab.filePath && (!currentTab.history || currentTab.history.length <= 1))
-        ? currentTab
-        : createNewTab();
+      const isCurrentBlank = state.tabs.length === 1 && 
+        !currentTab.isDirty && 
+        !currentTab.filePath && 
+        !currentTab.fileHandle && 
+        (!currentTab.history || currentTab.history.length <= 1);
+      
+      const targetTab = isCurrentBlank ? currentTab : createNewTab();
 
       targetTab.title = fileDisplayName;
+      targetTab.fileName = rawFileName || (fileDisplayName + ".ymind");
       targetTab.filePath = filePath;
+      targetTab.fileHandle = fileHandle || null;
       targetTab.mindData = JSON.parse(JSON.stringify(loadedMindData));
       targetTab.layoutStructure = loadedLayout;
       targetTab.colorPalette = loadedPalette;
@@ -226,36 +326,22 @@ export function initEventListeners(renderApp) {
       targetTab.canvasTheme = loadedTheme;
       targetTab.selectedIds = new Set([targetTab.mindData.id || "root"]);
       targetTab.focusedRootId = targetTab.mindData.id || "root";
+      targetTab.history = [JSON.stringify(targetTab.mindData)];
+      targetTab.historyIndex = 0;
       targetTab.isDirty = false;
       camera.transform = targetTab.camera;
 
       document.body.className = `theme-${loadedTheme}`;
       recordRecentDoc(fileDisplayName, targetTab.mindData, loadedLayout, filePath, targetTab);
-      saveSnapshot();
 
       window.__SHOW_WORKSPACE__ ? window.__SHOW_WORKSPACE__() : renderApp();
       syncInspectorUi();
+      smartCenterOnSelectedNode(state, true);
       showToast(`📂 已打开: ${fileDisplayName}`);
+      return true;
     } catch (err) {
-      await appAlert({ title: "打开失败", message: "无法解析该文件：" + err.message, type: "error" });
-    }
-  }
-
-  async function openLocalFile() {
-    if (invoke) {
-      try {
-        const res = await invoke("open_file_dialog");
-        if (res?.content) {
-          loadFileContent(res.content, res.path.split(/[/\\]/).pop().replace(/\.[^/.]+$/, ""), res.path);
-          return;
-        }
-      } catch (e) {
-        console.warn("Tauri open dialog fallback to web input", e);
-      }
-    }
-    if (fileInput) {
-      fileInput.value = "";
-      fileInput.click();
+      await appAlert({ title: "打开失败", message: "无法解析该思维导图文件：" + err.message, type: "error" });
+      return false;
     }
   }
 
@@ -263,7 +349,8 @@ export function initEventListeners(renderApp) {
     fileInput.onchange = async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      loadFileContent(await file.text(), file.name.replace(/\.[^/.]+$/, ""), null);
+      const cleanName = file.name.replace(/\.[^/.]+$/, "");
+      await loadFileContent(await file.text(), cleanName, null, file.name, null);
     };
   }
 
@@ -303,7 +390,7 @@ export function initEventListeners(renderApp) {
       const tags = primary?.tags || [];
 
       if (tags.length === 0) {
-        modalTagsList.innerHTML = '<span class="modal-tag-empty">暂无标签</span>';
+        modalTagsList.innerHTML = "<span class=\"modal-tag-empty\">暂无标签</span>";
         return;
       }
 
@@ -368,11 +455,6 @@ export function initEventListeners(renderApp) {
 
     state.selectedIds.forEach(id => {
       if (id === state.focusedRootId) return;
-      if (state.floatingNodes && state.floatingNodes.some(f => f.id === id)) {
-        state.floatingNodes = state.floatingNodes.filter(f => f.id !== id);
-        changed = true;
-        return;
-      }
       const parent = findParent(id, state.mindData);
       if (parent) {
         parent.children = parent.children.filter(c => c.id !== id);
@@ -382,6 +464,7 @@ export function initEventListeners(renderApp) {
     });
 
     if (changed) {
+      if (!findNode(state.focusedRootId, state.mindData)) state.focusedRootId = state.mindData?.id || "root";
       state.selectedIds = new Set([fallbackId]);
       saveSnapshot();
       renderApp();
@@ -408,10 +491,6 @@ export function initEventListeners(renderApp) {
     const primary = getPrimarySelectedNode();
     if (!primary || primary.id === state.focusedRootId) {
       addChildNode();
-      return;
-    }
-    if (state.floatingNodes && state.floatingNodes.some(f => f.id === primary.id)) {
-      createFloatingNode((primary.customX || 300) + 40, (primary.customY || 100) + 50);
       return;
     }
     const parent = findParent(primary.id, state.mindData);
@@ -498,9 +577,6 @@ export function initEventListeners(renderApp) {
     if (!isAlreadyOpen) wrapper.classList.add("active");
   }
 
-  bindClick("btn-priority", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-progress", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-
   window.addEventListener("pointerdown", (e) => {
     if (!e.target.closest(".dropdown-wrapper")) {
       document.querySelectorAll(".dropdown-wrapper.active").forEach(w => w.classList.remove("active"));
@@ -510,21 +586,35 @@ export function initEventListeners(renderApp) {
   bindClick("btn-zoom-in", () => {
     stopAllCameraAnimations();
     camera.transform.scale = Math.min(3.5, camera.transform.scale * 1.25);
-    requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;
+    requestTransformUpdate();
+    const zt = document.getElementById("txt-zoom-level");
+    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
   });
+
   bindClick("btn-zoom-out", () => {
     stopAllCameraAnimations();
     camera.transform.scale = Math.max(0.15, camera.transform.scale / 1.25);
-    requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;
+    requestTransformUpdate();
+    const zt = document.getElementById("txt-zoom-level");
+    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
   });
+
   bindClick("txt-zoom-level", () => {
     stopAllCameraAnimations();
     camera.transform.scale = 1.0;
-    requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;
+    requestTransformUpdate();
+    const zt = document.getElementById("txt-zoom-level");
+    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
     smartCenterOnSelectedNode(state, true);
   });
+
   bindClick("btn-smart-center", () => smartCenterOnSelectedNode(state, true));
   bindClick("btn-toggle-minimap", () => minimapWidget?.classList.toggle("hidden"));
+
+  // 绑定保存与打开事件
+  bindClick("btn-save", () => saveMindMapFile(false));
+  bindClick("btn-open", openLocalFile);
+  bindClick("nav-btn-open-file", openLocalFile);
 
   window.addEventListener("keydown", (e) => {
     if (e.target && (e.target.matches?.("input, textarea, select, [contenteditable=true]") || e.target.isContentEditable) && e.target.id !== "inline-editor") return;
@@ -538,28 +628,10 @@ export function initEventListeners(renderApp) {
 
     if (state.editingNodeId) return;
 
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "h") { e.preventDefault(); openVersionHistoryModal(renderApp); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveMindMapFile(true); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveMindMapFile(false); return; }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "h") { e.preventDefault(); openVersionHistoryModal(renderApp); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); openLocalFile(); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
     if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
     if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
     if (e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); switchViewMode(state.viewMode === "mindmap" ? "outliner" : "mindmap"); return; }
@@ -578,7 +650,12 @@ export function initEventListeners(renderApp) {
     else if (e.altKey && (e.key.toLowerCase() === "c" || e.key === "ç")) { e.preventDefault(); smartCenterOnSelectedNode(state); }
     else if (e.key === "Escape") {
       closeVersionHistoryModal();
-      const rootId = state.mindData?.id || "root"; if (state.focusedRootId !== rootId) { state.focusedRootId = rootId; renderApp(); smartCenterOnSelectedNode(state); }
+      const rootId = state.mindData?.id || "root"; 
+      if (state.focusedRootId !== rootId) { 
+        state.focusedRootId = rootId; 
+        renderApp(); 
+        smartCenterOnSelectedNode(state); 
+      }
     } else if (e.key === " " || e.key === "F2") {
       e.preventDefault();
       const primary = getPrimarySelectedNode();
@@ -587,7 +664,8 @@ export function initEventListeners(renderApp) {
       e.preventDefault();
       e.shiftKey ? redo(renderApp) : undo(renderApp);
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-      e.preventDefault(); redo(renderApp);
+      e.preventDefault(); 
+      redo(renderApp);
     }
   });
 
@@ -613,7 +691,6 @@ export function initEventListeners(renderApp) {
 
       document.querySelectorAll(".dropdown-wrapper").forEach(w => w.classList.remove("active"));
       if (isNode || isInteractiveUi) return;
-      // detail===2 removed to prevent click bleed-through
 
       e.preventDefault();
       lastMousePos = { x: e.clientX, y: e.clientY };
@@ -696,7 +773,7 @@ export function initEventListeners(renderApp) {
       }
     });
 
-    window.addEventListener("mouseup", () => {
+    window.addEventListener("mouseup", (e) => {
       if (isMarqueeActive && marqueeBox) {
         isMarqueeActive = false;
         marqueeBox.classList.add("hidden");
@@ -721,26 +798,43 @@ export function initEventListeners(renderApp) {
       }
     });
 
-    
-    viewport.addEventListener("dblclick", (e) => {
-      // 🌟 防穿透保护：工作区切换后 400ms 内禁止响应双击新建浮动节点
-      if (Date.now() - (window.__WORKSPACE_OPENED_TIME__ || 0) < 450) return;
-      const isNode = e.target.closest && (e.target.closest(".svg-node") || e.target.closest(".svg-badge"));
-      const isInteractiveUi = e.target.closest && (
-        e.target.closest(".canvas-floating-controls") ||
-        e.target.closest(".minimap-widget") ||
-        e.target.closest(".inline-editor") ||
-        e.target.closest(".apple-breadcrumb-capsule") ||
-        e.target.closest(".dropdown-wrapper")
-      );
-      if (isNode || isInteractiveUi) return;
-      const vpRect = viewport.getBoundingClientRect();
-      const worldX = (e.clientX - vpRect.left - camera.transform.x) / camera.transform.scale;
-      const worldY = (e.clientY - vpRect.top - camera.transform.y) / camera.transform.scale;
-      createFloatingNode(worldX, worldY);
-    });
-
-    let vw=window.innerWidth,vh=window.innerHeight;window.addEventListener("resize",()=>{vw=window.innerWidth;vh=window.innerHeight;});viewport.addEventListener("wheel",(e)=>{if(state.editingNodeId){const ed=document.getElementById("inline-editor");if(ed&&!ed.classList.contains("hidden"))ed.blur();return;}stopAllCameraAnimations();e.preventDefault();if(e.ctrlKey||e.metaKey||Math.abs(e.deltaX)>0&&!e.shiftKey){if(e.ctrlKey||e.metaKey){const rect=viewport.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const prev=camera.transform.scale;const factor=Math.exp(-e.deltaY*0.006);const ns=Math.min(Math.max(0.15,prev*factor),3.5);camera.transform.x=mx-(mx-camera.transform.x)*(ns/prev);camera.transform.y=my-(my-camera.transform.y)*(ns/prev);camera.transform.scale=ns;}else{camera.transform.x-=e.deltaX;camera.transform.y-=e.deltaY;}}else{const rect=viewport.getBoundingClientRect();const mx=e.clientX-rect.left,my=e.clientY-rect.top;const prev=camera.transform.scale;const delta=Math.sign(e.deltaY)*Math.min(Math.abs(e.deltaY),40);const factor=Math.exp(-delta*0.0035);const ns=Math.min(Math.max(0.15,prev*factor),3.5);camera.transform.x=mx-(mx-camera.transform.x)*(ns/prev);camera.transform.y=my-(my-camera.transform.y)*(ns/prev);camera.transform.scale=ns;}requestTransformUpdate();const zt=document.getElementById("txt-zoom-level");if(zt)zt.innerText=`${Math.round(camera.transform.scale*100)}%`;},{passive:false});
+    viewport.addEventListener("wheel", (e) => {
+      if (state.editingNodeId) {
+        const ed = document.getElementById("inline-editor");
+        if (ed && !ed.classList.contains("hidden")) ed.blur();
+        return;
+      }
+      stopAllCameraAnimations();
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey || (Math.abs(e.deltaX) > 0 && !e.shiftKey)) {
+        if (e.ctrlKey || e.metaKey) {
+          const rect = viewport.getBoundingClientRect();
+          const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+          const prev = camera.transform.scale;
+          const factor = Math.exp(-e.deltaY * 0.006);
+          const ns = Math.min(Math.max(0.15, prev * factor), 3.5);
+          camera.transform.x = mx - (mx - camera.transform.x) * (ns / prev);
+          camera.transform.y = my - (my - camera.transform.y) * (ns / prev);
+          camera.transform.scale = ns;
+        } else {
+          camera.transform.x -= e.deltaX;
+          camera.transform.y -= e.deltaY;
+        }
+      } else {
+        const rect = viewport.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const prev = camera.transform.scale;
+        const delta = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 40);
+        const factor = Math.exp(-delta * 0.0035);
+        const ns = Math.min(Math.max(0.15, prev * factor), 3.5);
+        camera.transform.x = mx - (mx - camera.transform.x) * (ns / prev);
+        camera.transform.y = my - (my - camera.transform.y) * (ns / prev);
+        camera.transform.scale = ns;
+      }
+      requestTransformUpdate();
+      const zt = document.getElementById("txt-zoom-level");
+      if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
+    }, { passive: false });
   }
 
   bindClick("btn-mode-mindmap", () => switchViewMode("mindmap"));
@@ -772,249 +866,7 @@ export function initEventListeners(renderApp) {
       chip.closest(".dropdown-wrapper")?.classList.remove("active");
     });
   });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
 
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
-  });
-
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
   bindClick("btn-add-child", addChildNode);
   bindClick("btn-add-sibling", addSiblingNode);
   bindClick("btn-delete", batchDelete);
@@ -1022,34 +874,11 @@ export function initEventListeners(renderApp) {
   bindClick("btn-redo", () => redo(renderApp));
   bindClick("btn-add-tag", openTagManagerModal);
   bindClick("btn-node-note", () => openNotesDrawer(getPrimarySelectedNode()));
-  bindClick("btn-add-floating", () => createFloatingNode(camera.transform.x, camera.transform.y));
   bindClick("btn-active-recall", () => toggleRecallMode(renderApp));
   bindClick("btn-flashcards", openFlashcardModal);
-  bindClick("btn-save", () => saveMindMapFile(false));
-  bindClick("btn-open", openLocalFile);
-  bindClick("nav-btn-open-file", openLocalFile);
   bindClick("btn-exit-focus", () => { 
     state.focusedRootId = state.mindData?.id || "root"; 
     renderApp(); 
-    smartCenterOnSelectedNode(state);
+    smartCenterOnSelectedNode(state); 
   });
-}
-
-export function createFloatingNode(worldX, worldY) {
-  const newFloat = {
-    id: "float_" + Date.now(),
-    text: "💭 浮动灵感主题",
-    customX: (worldX || 250),
-    customY: (worldY || 100),
-    children: [],
-    collapsed: false
-  };
-  if (!state.floatingNodes) state.floatingNodes = [];
-  state.floatingNodes.push(newFloat);
-  state.selectedIds = new Set([newFloat.id]);
-  saveSnapshot();
-  window.__RENDER_APP__ ? window.__RENDER_APP__() : null;
-  const node = findNode(newFloat.id, state.mindData);
-  if (node) startEditNode(node, state, window.__RENDER_APP__);
-  showToast("💭 已创建自由浮动主题！");
 }

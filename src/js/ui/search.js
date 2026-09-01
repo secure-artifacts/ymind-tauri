@@ -1,5 +1,5 @@
-import { state, getAncestors } from '../core/state.js';
-import { smartCenterOnSelectedNode } from '../core/camera.js';
+import { state, getAncestors } from "../core/state.js";
+import { smartCenterOnSelectedNode } from "../core/camera.js";
 
 let matchedNodeIds = [];
 let currentMatchIndex = -1;
@@ -54,7 +54,6 @@ export function initSearchEngine(renderApp) {
     }
 
     searchTree(state.mindData);
-    if (state.floatingNodes) state.floatingNodes.forEach(searchTree);
 
     if (matchedNodeIds.length > 0) {
       currentMatchIndex = 0;

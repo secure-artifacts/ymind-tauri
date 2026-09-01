@@ -8,7 +8,7 @@ const tabList = document.getElementById("tab-list");
 export function getTabDisplayFilename(tab) {
   if (!tab) return "未命名导图";
   if (tab.filePath) {
-    return tab.filePath.split(/[/\\]/).pop();
+    return tab.filePath.split(/[\/\\]/).pop();
   }
   return tab.title || (tab.mindData?.text?.trim()) || "未命名导图";
 }
@@ -25,8 +25,8 @@ export function renderTabBar(renderApp, showHome) {
   state.tabs.forEach(t => {
     const displayName = getTabDisplayFilename(t);
     const item = document.createElement("div");
-    item.className = `apple-tab-item ${t.id === state.activeTabId ? "active" : ""} ${t.isDirty ? "is-dirty" : ""}`;
-    item.title = t.filePath ? `${displayName} (${t.filePath})` : displayName;
+    item.className = "apple-tab-item " + (t.id === state.activeTabId ? "active" : "") + " " + (t.isDirty ? "is-dirty" : "");
+    item.title = t.filePath ? (displayName + " (" + t.filePath + ")") : displayName;
 
     const dirtyDot = t.isDirty ? `<span class="tab-dirty-indicator" title="未保存的修改">●</span>` : "";
 
@@ -40,18 +40,25 @@ export function renderTabBar(renderApp, showHome) {
       if (e.target.classList.contains("tab-close-btn")) {
         e.stopPropagation();
         const remaining = closeTab(t.id);
-if (remaining === 0) { showHome(); return; }
-const cur = getActiveTab();
-if (cur) { camera.transform = cur.camera; document.body.className = `theme-${cur.canvasTheme || "studio-light"}`; }
-renderTabBar(renderApp, showHome); renderApp(); syncInspectorUi(); return;
+        if (remaining === 0) { showHome(); return; }
+        const cur = getActiveTab();
+        if (cur) {
+          camera.transform = { ...cur.camera };
+          document.body.className = "theme-" + (cur.canvasTheme || "studio-light");
+        }
+        renderTabBar(renderApp, showHome);
+        renderApp();
+        syncInspectorUi();
+        return;
       }
+      const prev = getActiveTab();
+      if (prev) prev.camera = { ...camera.transform };
       state.activeTabId = t.id;
-      camera.transform = t.camera;
-      document.body.className = `theme-${t.canvasTheme || "studio-light"}`;
+      camera.transform = { ...t.camera };
+      document.body.className = "theme-" + (t.canvasTheme || "studio-light");
       renderTabBar(renderApp, showHome);
       renderApp();
       syncInspectorUi();
-      smartCenterOnSelectedNode(state, false);
     };
     tabList.appendChild(item);
   });

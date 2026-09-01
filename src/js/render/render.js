@@ -4,19 +4,16 @@ import { getLinePathData } from "../geometry/lines.js";
 import { findNode, getAncestors, saveSnapshot, getActiveTab } from "../core/state.js";
 import { camera, stopAllCameraAnimations } from "../core/camera.js";
 
-
-// 🌟 计算世界坐标系下的视口视锥范围（带 Overscan 缓冲区）
-export function getCullBounds(viewportEl, cam, overscan = 800) {
+export function getCullBounds(viewportEl, cam, overscan = 600) {
   if (!viewportEl) return null;
   const s = cam.scale || 1;
   const w = viewportEl.offsetWidth || window.innerWidth;
   const h = viewportEl.offsetHeight || window.innerHeight;
-  const pad = Math.min(overscan, overscan * s);
   return {
-    left: (-cam.x) / s - pad,
-    top: (-cam.y) / s - pad,
-    right: (w - cam.x) / s + pad,
-    bottom: (h - cam.y) / s + pad
+    left: (-cam.x) / s - overscan,
+    top: (-cam.y) / s - overscan,
+    right: (w - cam.x) / s + overscan,
+    bottom: (h - cam.y) / s + overscan
   };
 }
 
@@ -35,12 +32,12 @@ const viewport = document.getElementById("viewport");
 let lastClickTime = 0;
 let lastClickNodeId = null;
 
-const DARK_THEME_CLASSES = [
+const DARK_THEMES = new Set([
   "theme-space-gray", "theme-midnight-abyss", "theme-blueprint-pro",
   "theme-slate-chalkboard", "theme-carbon-fiber", "theme-cyber-matrix",
   "theme-aurora-borealis", "theme-midnight", "theme-graphite",
   "theme-blueprint", "theme-chalkboard", "theme-carbon"
-];
+]);
 
 function createHaloElement(id, w, h, boxStyle, isRootOfView) {
   const r = isRootOfView ? 16 : 12;
@@ -64,7 +61,7 @@ function createHaloElement(id, w, h, boxStyle, isRootOfView) {
 }
 
 export function updateSelectionStyles(state) {
-  if (!state || !state.selectedIds) return;
+  if (!state?.selectedIds) return;
   document.querySelectorAll(".svg-node").forEach(nodeEl => {
     const id = nodeEl.dataset.id;
     const isSelected = state.selectedIds.has(id);
@@ -85,8 +82,6 @@ export function updateSelectionStyles(state) {
 }
 
 export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme = false, cullBounds = null) {
-  // 🌟 分支级包围盒判定：如果整棵子树都在视口外部，直接 $O(1)$ 瞬时跳过！
-  // 保持全景节点完整渲染，杜绝视锥截断与白屏穿模
   const isRootOfView = node.id === state.focusedRootId;
   const isSelected = state.selectedIds.has(node.id);
   const lineStyle = state.lineStyle || "curve";
@@ -97,7 +92,6 @@ export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme 
     const strokeWidth = isFountainPen ? (isRootOfView ? "3.2" : "2.4") : (isRootOfView ? "2.5" : "1.8");
 
     node.children.forEach(child => {
-      // 🌟 原子级判定：子分支整体在视口安全范围内时，连线与节点一同渲染
       const childTreeInView = !cullBounds || (child.treeMinX === undefined) || isBoxOverlap(child.treeMinX, child.treeMinY, child.treeMaxX, child.treeMaxY, cullBounds);
       if (childTreeInView) {
         const strokeColor = child.colorTheme ? child.colorTheme.line : "#86868b";
@@ -116,11 +110,9 @@ export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme 
     });
   }
 
-  // Node is rendered synchronously with parent link
   const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const isRecallMasked = state.isRecallMode && node.id !== state.focusedRootId && !node._recallRevealed;
-  const isFloating = (state.floatingNodes || []).some(f => f.id === node.id || findNode(node.id, f));
-  g.setAttribute("class", `svg-node ${isFloating ? "is-floating" : ""} ${isRootOfView ? "root" : `level-${level}`} ${isSelected ? "selected" : ""} box-${boxStyle} ${isRecallMasked ? "recall-masked" : ""}`);
+  g.setAttribute("class", `svg-node ${isRootOfView ? "root" : `level-${level}`} ${isSelected ? "selected" : ""} box-${boxStyle} ${isRecallMasked ? "recall-masked" : ""}`);
   g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
   g.dataset.id = node.id;
   g.dataset.w = node.width;
@@ -171,7 +163,6 @@ export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme 
 
   let currentOffset = isRootOfView ? 24 : 16;
 
-  // 📝 渲染便签备注标识
   if (node.note) {
     const noteBadge = document.createElementNS("http://www.w3.org/2000/svg", "text");
     noteBadge.setAttribute("x", currentOffset + 9);
@@ -190,7 +181,6 @@ export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme 
     currentOffset += 20;
   }
 
-  // 🌟 渲染 200+ 专属图标
   if (node.icon) {
     const iconText = document.createElementNS("http://www.w3.org/2000/svg", "text");
     iconText.setAttribute("x", currentOffset + 9);
@@ -335,54 +325,6 @@ export function renderVectorTree(node, level = 0, state, callbacks, isDarkTheme 
       return;
     }
 
-    const floatingRoot = (state.floatingNodes || []).find(f => f.id === node.id || findNode(node.id, f));
-
-    if (floatingRoot) {
-      let isDragging = false;
-      const startClient = { x: e.clientX, y: e.clientY };
-      const origX = floatingRoot.customX || floatingRoot.x || 300;
-      const origY = floatingRoot.customY || floatingRoot.y || -150;
-
-      function onMove(me) {
-        const dx = (me.clientX - startClient.x) / camera.transform.scale;
-        const dy = (me.clientY - startClient.y) / camera.transform.scale;
-        if (!isDragging && Math.hypot(me.clientX - startClient.x, me.clientY - startClient.y) > 4) {
-          isDragging = true;
-          document.body.style.cursor = "grabbing";
-        }
-        if (isDragging) {
-          floatingRoot.customX = origX + dx;
-          floatingRoot.customY = origY + dy;
-          callbacks.onRender();
-        }
-      }
-
-      function onUp(ue) {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        if (isDragging) {
-          saveSnapshot();
-          callbacks.onRender();
-        } else {
-          const now = Date.now();
-          if (now - lastClickTime < 380 && lastClickNodeId === node.id) {
-            lastClickTime = 0;
-            lastClickNodeId = null;
-            startEditNode(node, state, callbacks.onRender);
-            return;
-          }
-          lastClickTime = now;
-          lastClickNodeId = node.id;
-          callbacks.onSelect(node.id, ue.shiftKey || ue.ctrlKey || ue.metaKey);
-        }
-      }
-
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-      return;
-    }
-
     const isAlreadySoloSelected = state.selectedIds.size === 1 && state.selectedIds.has(node.id);
     const now = Date.now();
     if (now - lastClickTime < 380 && lastClickNodeId === node.id) {
@@ -466,11 +408,12 @@ export function startEditNode(node, state, onRender) {
 export function renderBreadcrumb(state, onSelectRoot) {
   const rootId = state.mindData?.id || "root";
   if (state.focusedRootId === rootId) {
-    breadcrumbBar.classList.add("hidden");
+    breadcrumbBar?.classList.add("hidden");
     return;
   }
-  breadcrumbBar.classList.remove("hidden");
+  breadcrumbBar?.classList.remove("hidden");
   const path = getAncestors(state.focusedRootId, state.mindData);
+  if (!breadcrumbLinks) return;
   breadcrumbLinks.innerHTML = "";
   if (!path) return;
 
@@ -492,23 +435,15 @@ export function renderBreadcrumb(state, onSelectRoot) {
 
 export function render(state, callbacks) {
   const currentRoot = findNode(state.focusedRootId, state.mindData) || state.mindData;
-  layerConnections.innerHTML = "";
-  layerNodes.innerHTML = "";
+  if (layerConnections) layerConnections.innerHTML = "";
+  if (layerNodes) layerNodes.innerHTML = "";
 
-  const isDarkTheme = DARK_THEME_CLASSES.some(c => document.body.classList.contains(c));
+  const isDarkTheme = Array.from(document.body.classList).some(c => DARK_THEMES.has(c));
   const cullBounds = getCullBounds(viewport, camera.transform);
 
   computeLayout(currentRoot, 0, state.focusedRootId, state.layoutStructure);
   assignCoordinates(currentRoot, 0, 0, state.focusedRootId, state.layoutStructure, "right", null, state.colorPalette || "apple-classic");
   renderVectorTree(currentRoot, 0, state, callbacks, isDarkTheme, cullBounds);
-
-  if (state.floatingNodes && state.floatingNodes.length > 0) {
-    state.floatingNodes.forEach(fNode => {
-      computeLayout(fNode, 0, fNode.id, state.layoutStructure);
-      assignCoordinates(fNode, fNode.customX || 350, fNode.customY || -120, fNode.id, state.layoutStructure, "right", null, state.colorPalette || "apple-classic");
-      renderVectorTree(fNode, 0, state, callbacks, isDarkTheme, cullBounds);
-    });
-  }
 
   renderBreadcrumb(state, callbacks.onSelectRoot);
   callbacks.onRequestTransform();
