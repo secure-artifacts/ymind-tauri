@@ -1,0 +1,101 @@
+.workspace-view { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+.ymind-top-bar { height: 52px; background: var(--panel-bg); backdrop-filter: blur(24px) saturate(190%); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; padding: 0 14px; z-index: 100; position: relative; }
+.top-bar-left, .top-bar-center, .top-bar-right { display: flex; align-items: center; gap: 8px; }
+.top-bar-divider { width: 1px; height: 18px; background: rgba(0, 0, 0, 0.1); margin: 0 4px; }
+.ymind-icon-btn { width: 32px; height: 32px; border-radius: 7px; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease; }
+.ymind-icon-btn:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-primary); }
+.ymind-segmented-control { display: inline-flex; background: rgba(0, 0, 0, 0.05); padding: 3px; border-radius: 8px; gap: 2px; }
+.seg-btn { padding: 4px 10px; border: none; background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s ease; }
+.seg-btn:hover { color: var(--text-primary); }
+.seg-btn.active-mode { background: #ffffff; color: var(--apple-blue); font-weight: 700; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
+.history-btn-group { display: flex; align-items: center; gap: 2px; }
+.ymind-action-dock { display: inline-flex; align-items: center; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); padding: 3px 6px; border-radius: 24px; gap: 4px; }
+.dock-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 16px; border: none; background: transparent; color: var(--text-primary); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; outline: none; }
+.dock-btn:hover { background: rgba(0, 0, 0, 0.05); }
+.dock-btn.primary-action { background: var(--apple-blue-subtle); color: var(--apple-blue); font-weight: 600; }
+.dock-btn.danger-hover:hover { color: var(--apple-red); background: rgba(255, 59, 48, 0.08); }
+.dock-kbd { font-size: 9px; font-weight: 600; background: rgba(0, 0, 0, 0.06); color: var(--text-secondary); padding: 1px 4px; border-radius: 4px; }
+.dock-divider { width: 1px; height: 14px; background: rgba(0, 0, 0, 0.1); margin: 0 2px; }
+.ymind-solid-btn { display: inline-flex; align-items: center; gap: 5px; background: var(--apple-blue); color: #fff; border: none; border-radius: 7px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+.ymind-solid-btn:hover { background: var(--apple-blue-hover); }
+.ymind-format-toggle { display: inline-flex; align-items: center; gap: 5px; background: rgba(0, 0, 0, 0.05); color: var(--text-secondary); border: 1px solid transparent; border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.18s ease; }
+.ymind-format-toggle.active { background: #ffffff; color: var(--apple-blue); border-color: rgba(0, 0, 0, 0.08); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06); }
+.apple-tab-bar { height: 36px; background: #f1f5f9; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; padding: 0 10px; gap: 4px; user-select: none; }
+.tab-list { display: flex; align-items: center; gap: 6px; overflow-x: auto; flex: 1; height: 100%; scrollbar-width: none; }
+.tab-list::-webkit-scrollbar { display: none; }
+.apple-tab-item { height: 28px; min-width: 90px; max-width: 170px; flex: 0 1 150px; padding: 0 8px 0 10px; background: rgba(0, 0, 0, 0.04); border: 1px solid transparent; border-radius: 7px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1); }
+.apple-tab-item.active { background: #ffffff; color: var(--apple-blue); font-weight: 600; border-color: rgba(0, 0, 0, 0.06); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+.tab-title-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 28px; }
+.tab-dirty-indicator { font-size: 8px; color: var(--apple-orange); margin-right: -2px; animation: pulseDirty 2s infinite ease-in-out; }
+.tab-close-btn { font-size: 11px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); border-radius: 50%; flex-shrink: 0; }
+.tab-close-btn:hover { background: rgba(0, 0, 0, 0.08); color: var(--apple-red); }
+.tab-add-btn { height: 26px; width: 26px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; font-size: 16px; font-weight: 600; color: var(--text-secondary); cursor: pointer; border-radius: 6px; flex-shrink: 0; }
+.workspace-body-layout { flex: 1; display: flex; position: relative; overflow: hidden; }
+#viewport { flex: 1; position: relative; overflow: hidden; cursor: grab; contain: layout style paint; }
+#viewport:active { cursor: grabbing; }
+#svg-canvas { width: 100%; height: 100%; position: absolute; top: 0; left: 0; display: block; pointer-events: all; }
+#svg-infinite-bg { pointer-events: all; }
+#viewport-group { will-change: transform; transform-origin: 0 0; backface-visibility: hidden; transform-style: preserve-3d; }
+.marquee-box { position: absolute; border: 1.5px solid rgba(0, 113, 227, 0.9) !important; background: rgba(0, 113, 227, 0.13) !important; border-radius: 8px !important; -webkit-corner-smoothing: 0.62; pointer-events: none !important; z-index: 999 !important; box-sizing: border-box !important; box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.45), 0 2px 14px rgba(0, 113, 227, 0.22) !important; backdrop-filter: blur(1.5px); display: block; }
+.marquee-box.hidden { display: none !important; }
+.canvas-floating-controls { position: absolute; right: 20px; bottom: 20px; z-index: 85; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); border-radius: 20px; padding: 4px 8px; display: flex; align-items: center; gap: 4px; }
+.float-btn { width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.float-btn:hover { background: rgba(0, 0, 0, 0.06); color: var(--text-primary); }
+.float-zoom-text { font-size: 11.5px; font-weight: 600; color: var(--text-primary); padding: 0 4px; min-width: 38px; text-align: center; cursor: pointer; }
+.float-divider { width: 1px; height: 14px; background: rgba(0, 0, 0, 0.1); margin: 0 2px; }
+.minimap-widget { position: absolute; right: 20px; bottom: 66px; width: 180px; height: 120px; background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(16px); border: 1px solid var(--border-card); border-radius: 10px; box-shadow: var(--shadow-float); overflow: hidden; z-index: 80; cursor: pointer; }
+.minimap-widget.hidden { display: none !important; }
+#minimap-svg { width: 100%; height: 100%; display: block; }
+.minimap-viewport-box { position: absolute; top: 0; left: 0; border: 1.5px solid var(--apple-red); background: rgba(255, 59, 48, 0.12); pointer-events: none; border-radius: 3px; }
+.svg-link { fill: none !important; stroke-linecap: round !important; stroke-linejoin: round !important; vector-effect: non-scaling-stroke; }
+.fountain-pen-link { stroke-linecap: round !important; stroke-linejoin: round !important; opacity: 0.95; }
+.svg-node { cursor: pointer; contain: layout style; }
+.svg-node text.node-text { font-size: 13.5px; font-weight: 500; dominant-baseline: central; pointer-events: none; }
+.svg-node.root text.node-text { font-size: 15.5px; font-weight: 700; fill: #ffffff; }
+.svg-badge { cursor: pointer; }
+.svg-badge circle { fill: #ffffff; stroke-width: 1.5px; transition: r 0.15s; }
+.svg-badge:hover circle { r: 10.5; }
+.svg-badge text { font-size: 9.5px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.box-hand-drawn text.node-text, text.hand-drawn-font { font-family: "Chalkboard SE", "Comic Sans MS", "Caveat", "STKaiti", "KaiTi", cursive, sans-serif !important; font-weight: 600 !important; }
+.sketch-box { stroke-linecap: round !important; stroke-linejoin: round !important; }
+.inline-editor { position: absolute; z-index: 500; border: 2px solid var(--apple-blue) !important; border-radius: 8px; padding: 0 8px; text-align: center; outline: none; background: #ffffff !important; color: #1e293b !important; box-shadow: 0 4px 16px rgba(0, 113, 227, 0.28); font-family: inherit; font-weight: 600; display: block; }
+.apple-breadcrumb-capsule { position: absolute; top: 96px; left: 20px; z-index: 90; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px); padding: 5px 12px; border-radius: 20px; border: 0.5px solid var(--border-subtle); box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.breadcrumb-trail { display: flex; align-items: center; gap: 4px; }
+.breadcrumb-item { color: var(--apple-blue); cursor: pointer; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.breadcrumb-sep { color: var(--text-tertiary); font-size: 11px; }
+.apple-pill-btn { background: rgba(255, 59, 48, 0.1); border: 0.5px solid rgba(255, 59, 48, 0.25); color: var(--apple-red); border-radius: 8px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-weight: 600; }
+.outliner-panel { flex: 1; background: #fff; overflow-y: auto; display: flex; justify-content: center; }
+.outliner-scroll-wrapper { width: 100%; max-width: 800px; padding: 40px 24px; }
+.outliner-root-wrapper { margin-bottom: 20px; border-bottom: 2px solid var(--border-subtle); padding-bottom: 12px; }
+.outliner-title-input { font-size: 22px; font-weight: 700; color: var(--text-primary); outline: none; }
+.outliner-list { display: flex; flex-direction: column; gap: 6px; }
+.outliner-item { display: flex; flex-direction: column; }
+.outliner-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; }
+.outliner-row:hover { background: #f8fafc; }
+.outliner-row.selected { background: var(--apple-blue-subtle); }
+.outliner-toggle-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-tertiary); }
+.outliner-toggle-icon.expanded { transform: rotate(90deg); }
+.outliner-toggle-icon.leaf { visibility: hidden; }
+.outliner-bullet { width: 6px; height: 6px; border-radius: 50%; background: var(--apple-blue); cursor: pointer; margin: 0 4px; }
+.outliner-badges { display: flex; align-items: center; gap: 4px; }
+.outliner-progress-pill { font-size: 9.5px; font-weight: 700; color: var(--apple-blue); background: var(--apple-blue-subtle); padding: 1px 4px; border-radius: 3px; }
+.outliner-tag-pill { font-size: 9.5px; color: var(--text-secondary); background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+.outliner-text-input { flex: 1; outline: none; font-size: 13.5px; color: var(--text-primary); padding: 2px 4px; }
+.outliner-children { padding-left: 24px; display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+
+.svg-node.is-floating { cursor: grab !important; }
+.svg-node.is-floating:active { cursor: grabbing !important; }
+
+/* 🌟 Apple HIG 三岛屿顶栏与右侧胶囊按钮样式 */
+.dock-capsule-btn { display: inline-flex; align-items: center; gap: 5px; background: rgba(0, 0, 0, 0.04); border: 1px solid rgba(0, 0, 0, 0.06); color: var(--text-secondary); border-radius: 14px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; outline: none; }
+.dock-capsule-btn:hover { background: rgba(0, 0, 0, 0.08); color: var(--text-primary); border-color: rgba(0, 0, 0, 0.12); }
+.dock-capsule-btn.primary-action, .dock-capsule-btn.active-mode { background: var(--apple-blue-subtle); color: var(--apple-blue); border-color: rgba(0, 113, 227, 0.25); font-weight: 700; }
+
+/* 🌟 综合节点属性聚合 Popover */
+.node-attr-popover { min-width: 200px; padding: 8px; border-radius: 14px; box-shadow: 0 16px 48px rgba(0,0,0,0.16), 0 2px 10px rgba(0,0,0,0.06); }
+.popover-section-title { font-size: 10px; font-weight: 700; color: var(--text-tertiary); padding: 4px 8px 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.attr-quick-icons-row { display: flex; align-items: center; gap: 4px; padding: 4px 6px; }
+.attr-icon-chip { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; transition: transform 0.12s; }
+.attr-icon-chip:hover { background: rgba(0,113,227,0.1); transform: scale(1.18); }
+.attr-more-icons-btn { margin-left: auto; background: transparent; border: none; font-size: 10.5px; font-weight: 600; color: var(--apple-blue); cursor: pointer; padding: 2px 4px; }
+.attr-more-icons-btn:hover { text-decoration: underline; }

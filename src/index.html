@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YMind Pro Studio</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="theme-studio-light">
+
+  <input type="file" id="global-file-input" accept=".json,.mind,.ymind,application/json" class="hidden" />
+
+  <!-- ======================== 1. 启动工作台 (Home Hub) ======================== -->
+  <div id="home-view" class="home-view">
+    <aside class="home-sidebar">
+      <div class="sidebar-header">
+        <div class="brand-icon-lg">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 3v6m0 6v6M3 12h6m6 0h6"></path>
+            <circle cx="12" cy="3" r="1"></circle>
+            <circle cx="12" cy="21" r="1"></circle>
+            <circle cx="3" cy="12" r="1"></circle>
+            <circle cx="21" cy="12" r="1"></circle>
+          </svg>
+        </div>
+        <div class="sidebar-brand-text">
+          <div class="app-title">YMind Pro</div>
+          <div class="app-tag">Studio v3.0 Ultra</div>
+        </div>
+      </div>
+
+      <nav class="home-nav-menu">
+        <div class="home-nav-item action-nav-item btn-return-workspace" id="nav-btn-workspace" title="返回并继续编辑导图 (Esc / Alt+M)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v6m0 6v6M3 12h6m6 0h6"></path></svg>
+          <span id="nav-workspace-title">返回导图界面</span>
+          <span class="workspace-live-dot" title="当前有活跃导图"></span>
+        </div>
+
+        <div class="nav-divider"></div>
+
+        <div class="home-nav-item active" data-nav="home">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          <span>首页工作台</span>
+        </div>
+        <div class="home-nav-item" data-nav="templates">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span>模板库画廊</span>
+        </div>
+        <div class="home-nav-item" data-nav="starred">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          <span>我的收藏置顶</span>
+        </div>
+        
+        <div class="home-nav-item" data-nav="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>偏好与默认样式</span>
+        </div>
+
+        <div class="nav-divider"></div>
+
+        <div class="home-nav-item action-nav-item" id="nav-btn-history">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span>版本快照历史</span>
+        </div>
+
+        <div class="home-nav-item action-nav-item" id="nav-btn-open-file">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span>打开本地文件...</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-user-card">
+          <div class="user-avatar"></div>
+          <div class="user-info">
+            <div class="user-name">本地独立工作区</div>
+            <div class="user-status">100% 离线隐私安全</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="home-main-content">
+      <div id="home-tab-page-home" class="home-sub-page">
+        <div class="home-header-row">
+          <div>
+            <h2 class="home-greeting">欢迎使用 YMind，开启深度思考</h2>
+            <p class="home-sub">从热门思维结构快速起步，或继续编辑近期文档</p>
+          </div>
+          <div class="home-header-actions">
+            <button id="btn-quick-resume" class="btn-resume-capsule" title="返回导图编辑 (Esc)">
+              <span class="resume-icon">⚡</span>
+              <span id="txt-quick-resume">返回编辑界面</span>
+              <span class="resume-arrow">➔</span>
+            </button>
+            <div class="home-search-wrapper">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input id="home-recent-search" type="text" placeholder="搜索历史文档..." />
+            </div>
+          </div>
+        </div>
+
+        <section class="quick-start-section">
+          <div class="section-title">⚡ 快捷起步</div>
+          <div id="home-quick-start" class="quick-start-grid"></div>
+        </section>
+
+        <section class="recent-section">
+          <div class="section-title">📑 最近文档 (Recent Documents)</div>
+          <div id="home-recent-list" class="recent-list-wrapper"></div>
+        </section>
+      </div>
+
+      <div id="home-tab-page-templates" class="home-sub-page hidden">
+        <div class="home-header-row">
+          <div>
+            <h2 class="home-greeting">模板中心</h2>
+            <p class="home-sub">精选 8 款基础思维骨架与高频场景预置模板</p>
+          </div>
+          <div class="gallery-tabs">
+            <button class="gallery-tab active" data-cat="all">全部 (8)</button>
+            <button class="gallery-tab" data-cat="structure">📐 基础骨架 (4)</button>
+            <button class="gallery-tab" data-cat="scenario">📋 业务场景 (4)</button>
+          </div>
+        </div>
+        <div id="home-full-template-grid" class="full-template-grid"></div>
+      </div>
+
+      <div id="home-tab-page-starred" class="home-sub-page hidden">
+        <div class="home-header-row">
+          <div>
+            <h2 class="home-greeting">我的收藏置顶</h2>
+            <p class="home-sub">集中管理所有标记了星标的重要思维导图</p>
+          </div>
+        </div>
+        <div id="home-starred-list" class="recent-list-wrapper"></div>
+      </div>
+
+      <div id="home-tab-page-settings" class="home-sub-page hidden">
+        <div class="home-header-row">
+          <div>
+            <h2 class="home-greeting">偏好设置与默认样式</h2>
+            <p class="home-sub">定制全局中英文字体体系、新建思维导图默认结构与画布视觉风格</p>
+          </div>
+        </div>
+
+        <div class="settings-page-wrapper">
+          <div class="settings-section-card">
+            <div class="settings-section-header">
+              <div class="settings-section-title">🔤 字体排版体系 (Typography)</div>
+              <div class="settings-header-btn-group">
+                <button id="btn-scan-local-fonts" class="btn-scan-fonts" title="扫描电脑上安装的所有本地字体">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <span id="txt-scan-fonts">扫描本地字体</span>
+                </button>
+                <span id="badge-font-count" class="font-count-pill hidden">0 款字体</span>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">英文字体与西文数字</span>
+                <span class="settings-sub-label">优先应用于英文单词、数字计数与代码标点符号</span>
+              </div>
+              <div id="wrap-setting-font-en"></div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">中文字体与汉字字形</span>
+                <span class="settings-sub-label">决定思维导图汉字字形展示质感与笔触表现</span>
+              </div>
+              <div id="wrap-setting-font-zh"></div>
+            </div>
+
+            <div class="settings-preview-banner">
+              <span class="settings-preview-title">实时文字排版预览 (Live Preview)</span>
+              <div id="settings-font-preview" class="settings-preview-text">
+                The quick brown fox jumps over the lazy dog · 敏捷的思维激发无限创造力 1234567890
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-card">
+            <div class="settings-section-header">
+              <div class="settings-section-title">📐 默认思维骨架与配色方案</div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">默认导图骨架结构</span>
+                <span class="settings-sub-label">新建空白文档时默认采用的逻辑分支布局方式</span>
+              </div>
+              <div id="wrap-setting-default-layout"></div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">默认整体色彩方案</span>
+                <span class="settings-sub-label">新建导图时默认应用的分支与调色盘色阶</span>
+              </div>
+              <div id="wrap-setting-default-palette"></div>
+            </div>
+          </div>
+
+          <div class="settings-section-card">
+            <div class="settings-section-header">
+              <div class="settings-section-title">🎨 连线、卡片边框与画布背景</div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">默认连线样式</span>
+                <span class="settings-sub-label">节点之间父子关系线条的几何渲染算法</span>
+              </div>
+              <div id="wrap-setting-default-line"></div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">默认卡片形态</span>
+                <span class="settings-sub-label">思维导图节点的背景形态与边框外观</span>
+              </div>
+              <div id="wrap-setting-default-box"></div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-main-label">默认画布背景风格</span>
+                <span class="settings-sub-label">新建导图时默认呈现的 15 款舒适画布底纹</span>
+              </div>
+              <div id="wrap-setting-default-theme"></div>
+            </div>
+          </div>
+
+          <div class="settings-actions-footer">
+            <button id="btn-page-settings-reset" class="btn-restore-defaults">恢复系统默认</button>
+            <button id="btn-page-settings-save" class="btn-save-settings">保存偏好设置</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ======================== 2. 导图编辑主工作区 (Workspace View) ======================== -->
+  <div id="workspace-view" class="workspace-view hidden">
+    <!-- 顶栏 -->
+    <header class="ymind-top-bar" id="main-toolbar">
+      <!-- 🏝️ 左岛：模式分段切换器 (Views Island) -->
+      <div class="top-bar-left">
+        <button id="btn-back-home" class="ymind-icon-btn" title="返回首页工作台 (Esc)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+        </button>
+
+        <div class="ymind-segmented-control">
+          <button id="btn-mode-mindmap" class="seg-btn active-mode" title="思维导图视图 (Alt+1)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v6m0 6v6M3 12h6m6 0h6"></path></svg>
+            <span>导图</span>
+          </button>
+          <button id="btn-mode-outliner" class="seg-btn" title="大纲文档视图 (Alt+2)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            <span>大纲</span>
+          </button>
+          <button id="btn-mode-flashcards" class="seg-btn" title="3D 抽认卡复习工坊 (Alt+F)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="16" rx="3"></rect><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            <span>抽认卡</span>
+          </button>
+        </div>
+
+        <div class="top-bar-divider"></div>
+
+        <div class="history-btn-group">
+          <button id="btn-undo" class="ymind-icon-btn" title="撤销 (⌘Z)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg></button>
+          <button id="btn-redo" class="ymind-icon-btn" title="重做 (⌘Y)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
+        </div>
+      </div>
+
+      <!-- 🏝️ 中岛：纯粹的动态节点动作坞 (Dynamic Node Action Dock) -->
+      <div class="top-bar-center mindmap-only-control">
+        <div class="ymind-action-dock" id="node-action-dock">
+          <!-- 1. 结构创建组 -->
+          <button id="btn-add-child" class="dock-btn primary-action" title="添加子主题 (Tab)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>子主题</span>
+            <span class="dock-kbd">Tab</span>
+          </button>
+          <button id="btn-add-sibling" class="dock-btn" title="添加同级主题 (Enter)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>
+            <span>同级</span>
+            <span class="dock-kbd">↵</span>
+          </button>
+
+          <div class="dock-divider"></div>
+
+          <!-- 2. 内容与综合属性组 -->
+          <button id="btn-node-note" class="dock-btn" title="节点详细备注 (Alt+N)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            <span>备注</span>
+          </button>
+
+          <!-- 🏷️ 综合节点属性 Popover 聚合触发器 -->
+          <div class="dropdown-wrapper">
+            <button id="btn-node-attributes" class="dock-btn" title="设置图标、优先级、进度与标签">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+              <span>属性</span>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:-2px;color:var(--text-tertiary)"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="apple-popover node-attr-popover" id="menu-node-attributes">
+              <!-- 图标快捷栏 -->
+              <div class="popover-section-title">🌟 节点图标</div>
+              <div class="attr-quick-icons-row">
+                <span class="attr-icon-chip" data-quick-icon="⭐">⭐</span>
+                <span class="attr-icon-chip" data-quick-icon="🔥">🔥</span>
+                <span class="attr-icon-chip" data-quick-icon="💡">💡</span>
+                <span class="attr-icon-chip" data-quick-icon="🚀">🚀</span>
+                <span class="attr-icon-chip" data-quick-icon="✅">✅</span>
+                <span class="attr-icon-chip" data-quick-icon="⚠️">⚠️</span>
+                <button id="btn-open-full-icons" class="attr-more-icons-btn" title="在右侧侧边栏打开 200+ 专属图标库">更多...</button>
+              </div>
+
+              <div class="popover-separator"></div>
+
+              <!-- 优先级 -->
+              <div class="popover-section-title">🚩 优先级</div>
+              <div class="attr-menu-grid" id="menu-priority">
+                <div class="popover-item" data-priority="P1"><span class="apple-tag p1">P1</span> 最高优先级 <span class="popover-shortcut">1</span></div>
+                <div class="popover-item" data-priority="P2"><span class="apple-tag p2">P2</span> 高优先级 <span class="popover-shortcut">2</span></div>
+                <div class="popover-item" data-priority="P3"><span class="apple-tag p3">P3</span> 中优先级 <span class="popover-shortcut">3</span></div>
+                <div class="popover-item" data-priority="P4"><span class="apple-tag p4">P4</span> 低优先级 <span class="popover-shortcut">4</span></div>
+                <div class="popover-item text-muted" data-priority="none">清除优先级 <span class="popover-shortcut">0</span></div>
+              </div>
+
+              <div class="popover-separator"></div>
+
+              <!-- 进度 -->
+              <div class="popover-section-title">⏱️ 完成进度</div>
+              <div class="attr-menu-grid" id="menu-progress">
+                <div class="popover-item" data-progress="25%"><span class="progress-dot dot-25"></span> 25% 开始</div>
+                <div class="popover-item" data-progress="50%"><span class="progress-dot dot-50"></span> 50% 半程</div>
+                <div class="popover-item" data-progress="75%"><span class="progress-dot dot-75"></span> 75% 接近</div>
+                <div class="popover-item" data-progress="100%"><span class="progress-dot dot-100"></span> 100% 完成</div>
+                <div class="popover-item text-muted" data-progress="none">清除进度</div>
+              </div>
+
+              <div class="popover-separator"></div>
+
+              <!-- 标签 -->
+              <div class="popover-item" id="btn-open-tag-modal">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path></svg>
+                <span>管理节点标签...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="dock-divider"></div>
+
+          <!-- 3. 删除操作区 -->
+          <button id="btn-delete" class="dock-btn danger-hover" title="删除节点 (Delete)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 🏝️ 右岛：安全、测试、全局工具与格式检查器 (Utilities & Inspector Island) -->
+      <div class="top-bar-right">
+        <!-- 记忆测试掩码与加密保险箱胶囊 -->
+        <button id="btn-active-recall" class="dock-capsule-btn" title="切换记忆掩码测试模式 (Alt+R)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <span>测试</span>
+        </button>
+
+        <button id="btn-toggle-security" class="dock-capsule-btn" title="AES-256 安全加密保险箱 (Alt+L)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          <span id="txt-security-status">加密</span>
+        </button>
+
+        <div class="top-bar-divider"></div>
+
+        <!-- 实用工具组 -->
+        <button id="btn-search-toggle" class="ymind-icon-btn" title="全局搜索 (⌘F)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
+        <button id="btn-open-history" class="ymind-icon-btn" title="版本快照时光机 (Ctrl+Shift+H)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></button>
+        <button id="btn-open-settings" class="ymind-icon-btn" title="偏好与默认样式设置"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+
+        <div class="top-bar-divider"></div>
+
+        <!-- 保存与格式侧边栏 -->
+        <button id="btn-save" class="ymind-solid-btn" title="保存导图 (⌘S)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline></svg>
+          <span>保存</span>
+        </button>
+
+        <button id="btn-open" class="ymind-icon-btn" title="打开本地文件 (⌘O)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        </button>
+
+        <button id="btn-toggle-format" class="ymind-format-toggle active" title="展开/收起格式检查器">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
+          <span>格式</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="apple-tab-bar" class="apple-tab-bar">
+      <div id="tab-list" class="tab-list"></div>
+      <button id="btn-add-tab" class="tab-add-btn" title="新建标签页">+</button>
+    </div>
+
+    <nav id="breadcrumb-bar" class="apple-breadcrumb-capsule hidden">
+      <div class="breadcrumb-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div>
+      <div id="breadcrumb-links" class="breadcrumb-trail"></div>
+      <button id="btn-exit-focus" class="apple-pill-btn">退出专注</button>
+    </nav>
+
+    <!-- 工作区主体布局 -->
+    <div class="workspace-body-layout">
+      <main id="viewport" class="view-panel">
+        <svg id="svg-canvas">
+          <defs>
+            <filter id="sketch-filter" x="-20%" y="-20%" width="140%" height="140%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="3" result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.6" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+          <g id="viewport-group">
+            <rect id="svg-infinite-bg" x="-50000" y="-50000" width="100000" height="100000" fill="none" />
+            <g id="layer-connections"></g>
+            <g id="layer-nodes"></g>
+          </g>
+        </svg>
+        <div id="marquee-box" class="marquee-box hidden"></div>
+        <input id="inline-editor" class="inline-editor hidden" type="text" autocomplete="off" spellcheck="false" />
+
+        <div class="canvas-floating-controls">
+          <button id="btn-zoom-out" class="float-btn" title="缩小画布">-</button>
+          <span id="txt-zoom-level" class="float-zoom-text" title="重置缩放 (100%)">100%</span>
+          <button id="btn-zoom-in" class="float-btn" title="放大画布">+</button>
+          <div class="float-divider"></div>
+          <button id="btn-smart-center" class="float-btn" title="自适应居中 (Alt+C)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line></svg></button>
+          <button id="btn-toggle-minimap" class="float-btn" title="显示/隐藏小地图"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg></button>
+        </div>
+
+        <div id="minimap-widget" class="minimap-widget" title="拖拽红框或点击快速漫游">
+          <svg id="minimap-svg"></svg>
+          <div id="minimap-viewport-box" class="minimap-viewport-box"></div>
+        </div>
+      </main>
+
+      <section id="outliner-view" class="view-panel outliner-panel hidden">
+        <div class="outliner-scroll-wrapper">
+          <div id="outliner-content" class="outliner-document"></div>
+        </div>
+      </section>
+
+      <!-- 🌟 右侧格式检查器（已内置 200+ 专属节点图标库） -->
+      <aside id="format-sidebar" class="format-inspector-sidebar">
+        <div class="inspector-header">
+          <span class="inspector-title">导图格式与样式</span>
+          <button id="btn-close-format" class="inspector-close-btn" title="收起面板">✕</button>
+        </div>
+
+        <div class="inspector-content-scroll">
+          <!-- 1. 200+ 节点图标库 -->
+          <div class="inspector-section" id="inspector-icon-section">
+            <div class="inspector-section-header-row">
+              <div class="inspector-section-label">🌟 节点图标库 (200+)</div>
+              <button id="btn-inspector-clear-icon" class="btn-inspector-clear" title="清除当前选中节点的图标">清除图标</button>
+            </div>
+            <div class="inspector-icon-tabs" id="inspector-icon-tabs"></div>
+            <div class="inspector-icon-grid" id="inspector-icon-grid"></div>
+          </div>
+
+          <!-- 2. 导图结构 -->
+          <div class="inspector-section">
+            <div class="inspector-section-label">📐 导图骨架结构</div>
+            <div class="structure-grid" id="menu-structures">
+              <div class="struct-card active-item" data-structure="mindmap"><span class="struct-icon">🌳</span><span>经典双向</span></div>
+              <div class="struct-card" data-structure="logic-right"><span class="struct-icon">➡️</span><span>向右逻辑</span></div>
+              <div class="struct-card" data-structure="logic-left"><span class="struct-icon">⬅️</span><span>向左逻辑</span></div>
+              <div class="struct-card" data-structure="org-down"><span class="struct-icon">🏢</span><span>组织架构</span></div>
+            </div>
+          </div>
+
+          <!-- 3. 整体配色 -->
+          <div class="inspector-section">
+            <div class="inspector-section-label">🎨 整体配色方案 (11 款)</div>
+            <div class="palette-grid" id="palette-options-grid">
+              <div class="palette-chip active" data-palette="apple-classic"><div class="chip-dots"><span style="background:#ff9500"></span><span style="background:#0071e3"></span><span style="background:#34c759"></span><span style="background:#af52de"></span></div><span>🍏 Apple 经典</span></div>
+              <div class="palette-chip" data-palette="sketch-hand"><div class="chip-dots"><span style="background:#d97706"></span><span style="background:#3b82f6"></span><span style="background:#16a34a"></span><span style="background:#e11d48"></span></div><span>✏️ 温暖手绘</span></div>
+              <div class="palette-chip" data-palette="deep-ocean"><div class="chip-dots"><span style="background:#0284c7"></span><span style="background:#0d9488"></span><span style="background:#2563eb"></span><span style="background:#0891b2"></span></div><span>🌊 深海蓝浪</span></div>
+              <div class="palette-chip" data-palette="nordic-forest"><div class="chip-dots"><span style="background:#15803d"></span><span style="background:#059669"></span><span style="background:#65a30d"></span><span style="background:#0d9488"></span></div><span>🌲 极地冷杉</span></div>
+              <div class="palette-chip" data-palette="sunset-glow"><div class="chip-dots"><span style="background:#f97316"></span><span style="background:#e11d48"></span><span style="background:#f59e0b"></span><span style="background:#db2777"></span></div><span>🌅 落日晚霞</span></div>
+              <div class="palette-chip" data-palette="cyberpunk"><div class="chip-dots"><span style="background:#ec4899"></span><span style="background:#06b6d4"></span><span style="background:#8b5cf6"></span><span style="background:#10b981"></span></div><span>⚡ 赛博霓虹</span></div>
+              <div class="palette-chip" data-palette="morandi"><div class="chip-dots"><span style="background:#f9844a"></span><span style="background:#43aa8b"></span><span style="background:#90be6d"></span><span style="background:#577590"></span></div><span>🌸 莫兰迪雅致</span></div>
+              <div class="palette-chip" data-palette="caramel-latte"><div class="chip-dots"><span style="background:#b45309"></span><span style="background:#9a3412"></span><span style="background:#d97706"></span><span style="background:#854d0e"></span></div><span>☕ 焦糖拿铁</span></div>
+              <div class="palette-chip" data-palette="mystic-nebula"><div class="chip-dots"><span style="background:#9333ea"></span><span style="background:#c026d3"></span><span style="background:#6366f1"></span><span style="background:#d946ef"></span></div><span>🔮 灵动星云</span></div>
+              <div class="palette-chip" data-palette="fresh-mint"><div class="chip-dots"><span style="background:#14b8a6"></span><span style="background:#10b981"></span><span style="background:#22c55e"></span><span style="background:#06b6d4"></span></div><span>🌿 初夏薄荷</span></div>
+              <div class="palette-chip" data-palette="graphite-mono"><div class="chip-dots"><span style="background:#3f3f46"></span><span style="background:#52525b"></span><span style="background:#71717a"></span><span style="background:#27272a"></span></div><span>🌑 石墨极客</span></div>
+            </div>
+          </div>
+
+          <!-- 4. 连线样式 -->
+          <div class="inspector-section">
+            <div class="inspector-section-label">〰️ 连线样式</div>
+            <div class="segmented-style-row" id="line-style-options">
+              <button class="style-btn active" data-line="curve">平滑曲线</button>
+              <button class="style-btn" data-line="hand-drawn">✒️ 钢笔手绘</button>
+              <button class="style-btn" data-line="rounded-ortho">圆角折线</button>
+              <button class="style-btn" data-line="straight">极简直线</button>
+            </div>
+          </div>
+
+          <!-- 5. 节点边框 -->
+          <div class="inspector-section">
+            <div class="inspector-section-label">🔲 卡片边框形态</div>
+            <div class="segmented-style-row" id="box-style-options">
+              <button class="style-btn active" data-box="squircle">超椭圆</button>
+              <button class="style-btn" data-box="hand-drawn">✏️ 手绘框</button>
+              <button class="style-btn" data-box="rect">几何方框</button>
+              <button class="style-btn" data-box="underline">下划线</button>
+              <button class="style-btn" data-box="solid">实色填充</button>
+            </div>
+          </div>
+
+          <!-- 6. 画布背景 -->
+          <div class="inspector-section">
+            <div class="inspector-section-label">🖼 画布背景 (15 款)</div>
+            <div class="theme-grid" id="menu-themes">
+              <div class="theme-card active-item" data-theme="studio-light"><span class="theme-dot studio-pattern"></span><span>🍏 雪域纯白点阵</span></div>
+              <div class="theme-card" data-theme="cupertino-grid"><span class="theme-dot cupertino-pattern"></span><span>📐 库比蒂诺方格</span></div>
+              <div class="theme-card" data-theme="warm-parchment"><span class="theme-dot warm-parchment-pattern"></span><span>📜 暖心晨光羊皮</span></div>
+              <div class="theme-card" data-theme="matcha-breeze"><span class="theme-dot matcha-pattern"></span><span>🍵 京都抹茶微风</span></div>
+              <div class="theme-card" data-theme="lavender-mist"><span class="theme-dot lavender-pattern"></span><span>🪻 薰衣草晨雾</span></div>
+              <div class="theme-card" data-theme="california-sunset"><span class="theme-dot sunset-pattern"></span><span>🌄 加州落日暖霞</span></div>
+              <div class="theme-card" data-theme="vintage-craft"><span class="theme-dot craft-pattern"></span><span>📦 复古精装牛皮</span></div>
+              <div class="theme-card" data-theme="blueprint-pro"><span class="theme-dot blueprint-pattern"></span><span>📐 专业工程蓝图</span></div>
+              <div class="theme-card" data-theme="slate-chalkboard"><span class="theme-dot chalkboard-pattern"></span><span>🎓 墨绿学院黑板</span></div>
+              <div class="theme-card" data-theme="nordic-wood"><span class="theme-dot wood-pattern"></span><span>🪵 北欧白木年轮</span></div>
+              <div class="theme-card" data-theme="space-gray"><span class="theme-dot space-gray-pattern"></span><span> 深空灰钛金属</span></div>
+              <div class="theme-card" data-theme="midnight-abyss"><span class="theme-dot midnight-pattern"></span><span>🌑 极夜深邃黑曜</span></div>
+              <div class="theme-card" data-theme="carbon-fiber"><span class="theme-dot carbon-pattern"></span><span>🏎️ 超轻碳纤维织</span></div>
+              <div class="theme-card" data-theme="cyber-matrix"><span class="theme-dot cyber-pattern"></span><span>⚡ 赛博冷霓矩阵</span></div>
+              <div class="theme-card" data-theme="aurora-borealis"><span class="theme-dot aurora-pattern"></span><span>🔮 暗夜极光幻境</span></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="apple-search-bar" class="apple-search-bar hidden">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    <input id="search-input" type="text" placeholder="搜索节点、标签或优先级..." autocomplete="off" spellcheck="false" />
+    <span id="search-count" class="search-count">0 / 0</span>
+    <button id="btn-search-prev" class="search-nav-btn">▲</button>
+    <button id="btn-search-next" class="search-nav-btn">▼</button>
+    <button id="btn-search-close" class="search-close-btn">✕</button>
+  </div>
+
+  <div id="apple-system-dialog-overlay" class="apple-modal-overlay hidden"></div>
+
+  <div id="apple-modal-overlay" class="apple-modal-overlay hidden">
+    <div class="apple-modal-card">
+      <div class="apple-modal-header">
+        <div class="modal-header-icon primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path></svg></div>
+        <div class="modal-title-wrap"><span class="apple-modal-title">管理节点标签</span></div>
+      </div>
+      <div class="apple-modal-body">
+        <div class="modal-section-label">当前标签（点击 × 移除）：</div>
+        <div id="modal-tags-list" class="modal-tags-container"></div>
+        <div class="modal-section-label" style="margin-top: 10px;">添加新标签：</div>
+        <div class="modal-input-wrapper">
+          <input id="modal-input" class="apple-modal-input" type="text" placeholder="输入标签名后按回车..." autocomplete="off" />
+        </div>
+      </div>
+      <div class="apple-modal-footer">
+        <button id="modal-btn-cancel" class="modal-btn modal-btn-secondary">完成 (Esc)</button>
+        <button id="modal-btn-confirm" class="modal-btn modal-btn-primary">添加 (Enter)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="apple-history-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal-card history-modal-card">
+      <div class="apple-modal-header history-header">
+        <div class="history-title-group">
+          <div class="modal-header-icon primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+          <div class="modal-title-wrap">
+            <span class="apple-modal-title">版本快照历史库</span>
+            <span id="history-total-count" class="history-count-badge">0 个快照版本</span>
+          </div>
+        </div>
+        <div class="history-top-actions">
+          <button id="btn-create-manual-snap" class="modal-btn modal-btn-primary snap-top-btn">📸 拍摄当前快照</button>
+          <button id="btn-history-close" class="search-close-btn">✕</button>
+        </div>
+      </div>
+      <div class="history-search-row">
+        <input id="history-search-input" class="apple-modal-input" type="text" placeholder="搜索快照文档标题..." />
+        <button id="btn-history-clear-all" class="modal-btn modal-btn-secondary danger-text" title="清空全部快照">清空历史</button>
+      </div>
+      <div class="history-list-scroll-area">
+        <div id="history-snapshots-list" class="history-snapshots-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="apple-recovery-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal-card unsaved-confirm-card">
+      <div class="apple-modal-header">
+        <div class="modal-header-icon warning">🛡️</div>
+        <div class="modal-title-wrap"><h4 class="apple-modal-title">发现自动备份的未保存草稿</h4></div>
+      </div>
+      <div class="apple-modal-body">
+        <p id="recovery-time-hint" class="dialog-message">系统检测到上次未正常退出的工作区数据，是否立即恢复？</p>
+      </div>
+      <div class="apple-modal-footer">
+        <button id="btn-recovery-discard" class="modal-btn modal-btn-secondary">放弃草稿</button>
+        <button id="btn-recovery-confirm" class="modal-btn modal-btn-primary">恢复数据</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+  <div id="apple-context-menu" class="apple-popover hidden" style="position:fixed;z-index:99999;"><div class="popover-item context-menu-item" data-action="copy">📋 复制分支</div><div class="popover-item context-menu-item" data-action="cut">✂️ 剪切分支</div><div class="popover-item context-menu-item" data-action="paste">📥 粘贴到此处</div><div class="popover-separator"></div><div class="popover-item context-menu-item" data-action="toggle-collapse">📁 展开/折叠</div><div class="popover-item context-menu-item" data-action="focus">🔭 专注此分支</div><div class="popover-separator"></div><div class="popover-item context-menu-item" data-action="delete" style="color:var(--apple-red)">🗑️ 删除节点</div></div>
+
+  <!-- 📝 节点详细富文本 / Markdown 备注抽屉 -->
+  <aside id="notes-drawer" class="notes-drawer-panel hidden">
+    <div class="notes-drawer-header">
+      <div class="notes-header-left">
+        <span class="notes-icon-tag">📝</span>
+        <h4 id="notes-drawer-title" class="notes-title-text">节点备注详情</h4>
+      </div>
+      <div class="notes-header-actions">
+        <div class="notes-tab-group">
+          <button id="tab-notes-edit" class="notes-tab-btn active">✍️ 编辑</button>
+          <button id="tab-notes-preview" class="notes-tab-btn">👁️ 预览</button>
+        </div>
+        <button id="btn-clear-notes" class="notes-clear-btn" title="清空备注">清空</button>
+        <button id="btn-close-notes" class="inspector-close-btn">✕</button>
+      </div>
+    </div>
+    <div class="notes-toolbar">
+      <button class="note-tool-btn" data-tag="b" title="加粗"><strong>B</strong></button>
+      <button class="note-tool-btn" data-tag="i" title="斜体"><em>I</em></button>
+      <button class="note-tool-btn" data-tag="h" title="标题">H</button>
+      <button class="note-tool-btn" data-tag="code" title="代码块">&lt;/&gt;</button>
+      <button class="note-tool-btn" data-tag="list" title="无序列表">• 列表</button>
+      <button class="note-tool-btn" data-tag="check" title="任务待办">☑ 待办</button>
+      <button class="note-tool-btn" data-tag="quote" title="引用">” 引用</button>
+    </div>
+    <div class="notes-body-wrap">
+      <textarea id="notes-textarea" class="notes-editor-textarea" placeholder="输入 Markdown 笔记、代码片段、复盘反思或详细资料..."></textarea>
+      <div id="notes-preview-content" class="notes-preview-rendered hidden"></div>
+    </div>
+  </aside>
+
+  <!-- 🎴 Apple 3D 抽认卡复习工坊 -->
+  <div id="apple-flashcards-modal" class="apple-modal-overlay hidden">
+    <div class="flashcards-deck-card">
+      <div class="flashcards-header">
+        <div class="flashcards-title-badge">🎴 YMind 记忆抽认卡工坊</div>
+        <div class="flashcards-progress-wrap">
+          <span id="flashcard-progress-text" class="flashcards-counter">1 / 10</span>
+          <div class="flashcards-bar-track"><div id="flashcard-progress-bar" class="flashcards-bar-fill"></div></div>
+        </div>
+        <button id="btn-close-flashcards" class="search-close-btn">✕</button>
+      </div>
+
+      <div class="flashcards-perspective-stage">
+        <div id="flashcard-3d-wrap" class="flashcard-3d-box" title="点击或按空格翻转卡片">
+          <!-- 正面 -->
+          <div class="flashcard-face flashcard-front">
+            <div id="card-front-path" class="card-crumb-path">核心分支</div>
+            <div id="card-front-title" class="card-main-question">主题名称</div>
+            <div id="card-front-hint" class="card-sub-hint">请在脑海中回想此主题下的子节点要点...</div>
+            <div class="card-flip-prompt"><span>🔄 点击或按空格键翻转查看答案</span></div>
+          </div>
+          <!-- 背面 -->
+          <div class="flashcard-face flashcard-back">
+            <div id="card-back-title" class="card-back-question">答案解析与分支要点</div>
+            <div id="card-back-answers" class="card-back-scroll-area"></div>
+            <div class="card-flip-prompt"><span>🔄 再次点击可翻回正面</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flashcards-footer-actions">
+        <button id="btn-card-prev" class="card-nav-btn" title="上一张 (←)">◀ 上一张</button>
+        <div class="flashcards-rating-dock">
+          <button id="btn-rate-forgot" class="rate-pill forgot" title="按 1">❓ 遗忘重来 (1)</button>
+          <button id="btn-rate-review" class="rate-pill review" title="按 2">🤔 模糊待巩固 (2)</button>
+          <button id="btn-rate-mastered" class="rate-pill mastered" title="按 3">✅ 熟练掌握 (3)</button>
+        </div>
+        <button id="btn-flip-card" class="card-flip-action-btn">翻转卡片 (Space)</button>
+        <button id="btn-card-next" class="card-nav-btn" title="下一张 (→)">下一张 ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔒 Apple 风格设置加密保险箱弹窗 -->
+  <div id="apple-vault-set-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal-card vault-modal-card">
+      <div class="apple-modal-header">
+        <div class="modal-header-icon primary" style="background:rgba(0,113,227,0.12);color:#0071e3;font-size:18px;">🛡️</div>
+        <div class="modal-title-wrap">
+          <h3 class="apple-modal-title">设置 AES-256 密码保险箱</h3>
+          <span class="history-count-badge">双层信封加密 · PBKDF2-SHA-512 60万次抗爆</span>
+        </div>
+        <button id="btn-close-vault-set" class="search-close-btn">✕</button>
+      </div>
+
+      <div class="apple-modal-body" style="gap:12px;">
+        <div class="vault-input-group">
+          <label class="vault-label">访问密码</label>
+          <input id="vault-set-pass" class="apple-modal-input" type="password" placeholder="设置高强度主密码..." autocomplete="new-password" />
+          <div class="password-meter-track"><div id="vault-pass-meter-fill" class="password-meter-fill"></div></div>
+          <div class="password-strength-row">
+            <span id="vault-pass-strength-text" class="strength-hint-text">请输入密码</span>
+            <span class="vault-algo-tag">600K SHA-512</span>
+          </div>
+        </div>
+
+        <div class="vault-input-group">
+          <label class="vault-label">确认密码</label>
+          <input id="vault-set-pass-confirm" class="apple-modal-input" type="password" placeholder="再次输入确认密码..." autocomplete="new-password" />
+        </div>
+
+        <div class="vault-input-group">
+          <label class="vault-label">密码提示 (可选)</label>
+          <input id="vault-set-hint" class="apple-modal-input" type="text" placeholder="例如：童年最喜欢的城市+生日年份" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="apple-modal-footer">
+        <button id="btn-vault-disable" class="modal-btn modal-btn-secondary danger-text hidden">解除加密保护</button>
+        <button id="btn-vault-set-cancel" class="modal-btn modal-btn-secondary">取消</button>
+        <button id="btn-vault-set-save" class="modal-btn modal-btn-primary">启用保险箱保护</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔒 画布专属全屏毛玻璃锁屏海报 (Canvas Vault Poster) -->
+  <div id="canvas-vault-lock-screen" class="canvas-vault-lock-overlay hidden">
+    <div id="vault-poster-box" class="vault-poster-card">
+      <div class="vault-poster-icon">🔐</div>
+      <h2 id="vault-poster-title" class="vault-poster-title">思维导图受安全保护</h2>
+      <p class="vault-poster-sub">此文档已启用 AES-256 军工级端到端加密</p>
+      
+      <div id="vault-poster-hint-box" class="vault-hint-box hidden">
+        <span>💡 密码提示：</span><strong id="txt-vault-poster-hint"></strong>
+      </div>
+
+      <div class="vault-poster-input-wrapper">
+        <input id="vault-poster-password" class="vault-poster-input" type="password" placeholder="输入访问密码解锁..." autofocus />
+        <button id="btn-vault-poster-unlock" class="vault-poster-submit-btn" title="解密 (Enter)">➔</button>
+      </div>
+      <div id="vault-error-message" class="vault-error-hint hidden">密码错误，请重新输入</div>
+    </div>
+  </div>
+</body>
+</html>

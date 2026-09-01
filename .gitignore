@@ -1,0 +1,17 @@
+# Rust / Tauri 编译目录
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Node.js 依赖
+node_modules/
+dist/
+
+# 本地临时脚本与产物
+*.log
+.DS_Store
+Thumbs.db
+
+all_in_one.sh
+build.sh
+use.sh
+all_src_code.txt
