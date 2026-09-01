@@ -43,6 +43,7 @@ jobs:
         with:
           targets: ${{ matrix.targets }}
 
+      # 兼容 Ubuntu 22.04 / 24.04+ 依赖
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -65,12 +66,13 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/jammy.list || true
           sudo apt-get update || true
 
-      - name: Install dependencies
-        run: npm install
+      # 修复：全局安装指定版本的 Tauri v1 CLI（无需 package.json）
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^1.6.0
 
-      # 仅编译，不在此处调用 GitHub Release API
+      # 编译各平台安装包
       - name: Build Tauri app
-        run: npx @tauri-apps/cli build ${{ matrix.args }}
+        run: tauri build ${{ matrix.args }}
 
       # 暂存各端安装包
       - name: Upload build artifacts
@@ -111,7 +113,7 @@ jobs:
             release-assets/*.deb
             release-assets/*.AppImage
 
-      # 原子化一次性创建 Release（彻底解决 Immutable 冲突）
+      # 原子化一次性创建 Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
