@@ -549,6 +549,20 @@ export function initEventListeners(renderApp) {
     if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
     if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
     if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
+    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
+    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
     if (e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); switchViewMode(state.viewMode === "mindmap" ? "outliner" : "mindmap"); return; }
 
     if (state.viewMode === "outliner") return;
@@ -754,6 +768,195 @@ export function initEventListeners(renderApp) {
 
   bindClick("btn-mode-mindmap", () => switchViewMode("mindmap"));
   bindClick("btn-mode-outliner", () => switchViewMode("outliner"));
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
+  bindClick("btn-mode-flashcards", openFlashcardModal);
+  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
+  bindClick("btn-open-full-icons", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    document.getElementById("btn-toggle-format")?.click();
+    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  bindClick("btn-open-tag-modal", () => {
+    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
+    openTagManagerModal();
+  });
+
+  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ic = chip.dataset.quickIcon;
+      if (state.selectedIds) {
+        state.selectedIds.forEach(id => {
+          const n = findNode(id, state.mindData);
+          if (n) n.icon = (n.icon === ic ? null : ic);
+        });
+        saveSnapshot();
+        renderApp();
+      }
+      chip.closest(".dropdown-wrapper")?.classList.remove("active");
+    });
+  });
   bindClick("btn-mode-flashcards", openFlashcardModal);
   bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
   bindClick("btn-open-full-icons", () => {
