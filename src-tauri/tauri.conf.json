@@ -1,20 +1,45 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/config.schema.json",
-  "productName": "YMind",
-  "version": "0.1.0",
-  "identifier": "com.ymind",
+  "$schema": "https://schema.tauri.app/config/1",
   "build": {
-    "frontendDist": "../src"
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../src",
+    "distDir": "../src"
   },
-  "app": {
-    "withGlobalTauri": true,
+  "package": {
+    "productName": "YMind Pro",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": true
+    },
     "windows": [
       {
-        "title": "YMind (Rust + Tauri v2)",
-        "width": 1200,
-        "height": 800,
-        "resizable": true
+        "title": "YMind Pro Studio",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
       }
-    ]
+    ],
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.ymind.studio",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ]
+    },
+    "security": {
+      "csp": null
+    }
   }
 }

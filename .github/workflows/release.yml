@@ -16,12 +16,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04
+            targets: 'x86_64-unknown-linux-gnu'
+            args: ''
           - os: windows-latest
-            target: x86_64-pc-windows-msvc
+            targets: 'x86_64-pc-windows-msvc'
+            args: ''
           - os: macos-latest
-            target: universal-apple-darwin
+            # 修复：同时安装两个标准架构
+            targets: 'aarch64-apple-darwin, x86_64-apple-darwin'
+            # 传参给 tauri-action 进行 universal 合并
+            args: '--target universal-apple-darwin'
 
     runs-on: ${{ matrix.os }}
 
@@ -37,12 +42,15 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.targets }}
 
-      # 修复：补全 libsoup2.4 与 webkit2gtk-4.0 依赖
+      # 兼容 Ubuntu 22.04 / 24.04+ 的依赖
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
+          if grep -qE "24\.|noble" /etc/os-release; then
+            echo "deb http://archive.ubuntu.com/ubuntu jammy main universe" | sudo tee /etc/apt/sources.list.d/jammy.list
+          fi
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.0-dev \
@@ -52,12 +60,17 @@ jobs:
             librsvg2-dev \
             patchelf \
             build-essential \
-            libssl-dev
+            libssl-dev \
+            file \
+            wget \
+            curl
+          sudo rm -f /etc/apt/sources.list.d/jammy.list || true
+          sudo apt-get update || true
 
       - name: Install frontend dependencies
         run: npm install || true
 
-      # 执行 Tauri 构建
+      # 执行 Tauri 构建并传入平台对应参数
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
@@ -67,8 +80,9 @@ jobs:
           releaseName: 'YMind Pro ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
+          args: ${{ matrix.args }}
 
-      # 为安装包生成 Attestation 安全证明
+      # 为各平台安装包生成 Attestation 安全证明
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v2
         with:
@@ -78,3 +92,4 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
