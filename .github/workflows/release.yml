@@ -95,16 +95,24 @@ jobs:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-assets
+          path: raw-artifacts
           merge-multiple: true
 
-      # 对所有生成的安装包做 Attestation 签名
+      # 关键步骤：把所有深层子文件夹里的 deb/exe/dmg 提取到 flat 目录
+      - name: Prepare and flatten release assets
+        run: |
+          mkdir -p release-assets
+          find raw-artifacts -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.exe" -o -name "*.msi" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
+          echo "=== 即将发布的文件列表 ==="
+          ls -lh release-assets/
+
+      # 对提取出来的安装包做 Attestation 签名
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: 'release-assets/*'
 
-      # 原子化一次性创建 Release 并上传安装包
+      # 发布到 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
