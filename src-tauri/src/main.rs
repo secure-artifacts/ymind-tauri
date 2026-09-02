@@ -3,6 +3,8 @@
 
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
+
 
 // 🌟 Rust 原生保存引擎：支持弹窗选目录保存 & 覆盖保存
 #[tauri::command]
@@ -46,6 +48,11 @@ fn open_mindmap_file() -> Result<Option<(String, String)>, String> {
 
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+                let window = app.get_webview_window("main").unwrap();
+                window.maximize()?;
+                Ok(())
+        })
         .invoke_handler(tauri::generate_handler![save_mindmap_file, open_mindmap_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

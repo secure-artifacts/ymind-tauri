@@ -2,8 +2,12 @@ import { COLOR_PALETTES, PRIORITY_COLORS } from '../data/palettes.js';
 import { getGlobalSettings } from '../core/state.js';
 
 export { PRIORITY_COLORS };
-export const NODE_H_GAP = 58;
-export const NODE_V_GAP = 20;
+
+export const SPACING_CONFIG = {
+  compact: { hGap: 38, vGap: 12 },
+  normal: { hGap: 58, vGap: 20 },
+  loose: { hGap: 86, vGap: 32 }
+};
 
 const measureCanvas = document.createElement("canvas");
 const measureCtx = measureCanvas.getContext("2d");
@@ -37,8 +41,10 @@ export function measureTextWidth(text, fontSize = 13.5, fontWeight = "500") {
 
 export function measureNodeSize(node, level, focusedRootId) {
   const isRoot = node.id === focusedRootId;
-  const fontSize = isRoot ? 15.5 : 13.5;
-  const fontWeight = isRoot ? "700" : (level === 1 ? "600" : "500");
+  const defFontSize = isRoot ? 15.5 : 13.5;
+  const defFontWeight = isRoot ? "700" : (level === 1 ? "600" : "500");
+  const fontSize = node.fontSize ? parseFloat(node.fontSize) : defFontSize;
+  const fontWeight = node.fontWeight || defFontWeight;
   const textWidth = measureTextWidth(node.text, fontSize, fontWeight);
 
   let extraLeftWidth = 0;
@@ -64,7 +70,11 @@ export function measureNodeSize(node, level, focusedRootId) {
   node.textWidth = textWidth;
 }
 
-export function computeLayout(node, level = 0, focusedRootId = "root", structure = "mindmap") {
+export function computeLayout(node, level = 0, focusedRootId = "root", structure = "mindmap", density = "normal") {
+  const spacing = SPACING_CONFIG[density] || SPACING_CONFIG.normal;
+  const hGap = spacing.hGap;
+  const vGap = spacing.vGap;
+
   measureNodeSize(node, level, focusedRootId);
 
   if (!node.children || node.children.length === 0 || node.collapsed) {
@@ -76,9 +86,9 @@ export function computeLayout(node, level = 0, focusedRootId = "root", structure
   if (structure === "org-down") {
     let childrenWidth = 0;
     node.children.forEach((child, index) => {
-      computeLayout(child, level + 1, focusedRootId, structure);
+      computeLayout(child, level + 1, focusedRootId, structure, density);
       childrenWidth += child.treeWidth;
-      if (index > 0) childrenWidth += NODE_H_GAP;
+      if (index > 0) childrenWidth += hGap;
     });
     node.treeWidth = Math.max(node.width, childrenWidth);
     node.treeHeight = node.height;
@@ -91,34 +101,37 @@ export function computeLayout(node, level = 0, focusedRootId = "root", structure
 
     let rHeight = 0;
     node.rightChildren.forEach((child, idx) => {
-      computeLayout(child, level + 1, focusedRootId, structure);
+      computeLayout(child, level + 1, focusedRootId, structure, density);
       rHeight += child.treeHeight;
-      if (idx > 0) rHeight += NODE_V_GAP;
+      if (idx > 0) rHeight += vGap;
     });
     node.rightTreeHeight = Math.max(node.height, rHeight);
 
     let lHeight = 0;
     node.leftChildren.forEach((child, idx) => {
-      computeLayout(child, level + 1, focusedRootId, structure);
+      computeLayout(child, level + 1, focusedRootId, structure, density);
       lHeight += child.treeHeight;
-      if (idx > 0) lHeight += NODE_V_GAP;
+      if (idx > 0) lHeight += vGap;
     });
     node.leftTreeHeight = Math.max(node.height, lHeight);
     node.treeHeight = Math.max(node.rightTreeHeight, node.leftTreeHeight);
   } else {
     let childrenHeight = 0;
     node.children.forEach((child, index) => {
-      computeLayout(child, level + 1, focusedRootId, structure);
+      computeLayout(child, level + 1, focusedRootId, structure, density);
       childrenHeight += child.treeHeight;
-      if (index > 0) childrenHeight += NODE_V_GAP;
+      if (index > 0) childrenHeight += vGap;
     });
     node.treeHeight = Math.max(node.height, childrenHeight);
   }
 }
 
-export function assignCoordinates(node, x, y, focusedRootId = "root", structure = "mindmap", direction = "right", colorTheme = null, paletteKey = "apple-classic") {
+export function assignCoordinates(node, x, y, focusedRootId = "root", structure = "mindmap", direction = "right", colorTheme = null, paletteKey = "apple-classic", density = "normal") {
   const currentPalette = COLOR_PALETTES[paletteKey] || COLOR_PALETTES["apple-classic"];
   const paletteList = currentPalette.branches;
+  const spacing = SPACING_CONFIG[density] || SPACING_CONFIG.normal;
+  const hGap = spacing.hGap;
+  const vGap = spacing.vGap;
 
   node.x = x;
   node.y = y;
@@ -140,24 +153,24 @@ export function assignCoordinates(node, x, y, focusedRootId = "root", structure 
     node.children.forEach((child, idx) => {
       const nextTheme = (node.id === focusedRootId) ? paletteList[idx % paletteList.length] : node.colorTheme;
       const childX = startX + child.treeWidth / 2 - child.width / 2;
-      assignCoordinates(child, childX, y + node.height + 54, focusedRootId, structure, "down", nextTheme, paletteKey);
-      startX += child.treeWidth + NODE_H_GAP;
+      assignCoordinates(child, childX, y + node.height + 48, focusedRootId, structure, "down", nextTheme, paletteKey, density);
+      startX += child.treeWidth + hGap;
     });
   } else if (structure === "mindmap" && node.id === focusedRootId) {
     let startYR = y + node.height / 2 - node.rightTreeHeight / 2;
     node.rightChildren.forEach((child, idx) => {
       const nextTheme = paletteList[(idx * 2) % paletteList.length];
       const childY = startYR + child.treeHeight / 2 - child.height / 2;
-      assignCoordinates(child, x + node.width + NODE_H_GAP, childY, focusedRootId, structure, "right", nextTheme, paletteKey);
-      startYR += child.treeHeight + NODE_V_GAP;
+      assignCoordinates(child, x + node.width + hGap, childY, focusedRootId, structure, "right", nextTheme, paletteKey, density);
+      startYR += child.treeHeight + vGap;
     });
 
     let startYL = y + node.height / 2 - node.leftTreeHeight / 2;
     node.leftChildren.forEach((child, idx) => {
       const nextTheme = paletteList[(idx * 2 + 1) % paletteList.length];
       const childY = startYL + child.treeHeight / 2 - child.height / 2;
-      assignCoordinates(child, x - child.width - NODE_H_GAP, childY, focusedRootId, structure, "left", nextTheme, paletteKey);
-      startYL += child.treeHeight + NODE_V_GAP;
+      assignCoordinates(child, x - child.width - hGap, childY, focusedRootId, structure, "left", nextTheme, paletteKey, density);
+      startYL += child.treeHeight + vGap;
     });
   } else {
     const activeDir = (structure === "logic-left" || direction === "left") ? "left" : "right";
@@ -166,13 +179,12 @@ export function assignCoordinates(node, x, y, focusedRootId = "root", structure 
     node.children.forEach((child, idx) => {
       const nextTheme = (node.id === focusedRootId) ? paletteList[idx % paletteList.length] : node.colorTheme;
       const childY = startY + child.treeHeight / 2 - child.height / 2;
-      const childX = (activeDir === "left") ? (x - child.width - NODE_H_GAP) : (x + node.width + NODE_H_GAP);
-      assignCoordinates(child, childX, childY, focusedRootId, structure, activeDir, nextTheme, paletteKey);
-      startY += child.treeHeight + NODE_V_GAP;
+      const childX = (activeDir === "left") ? (x - child.width - hGap) : (x + node.width + hGap);
+      assignCoordinates(child, childX, childY, focusedRootId, structure, activeDir, nextTheme, paletteKey, density);
+      startY += child.treeHeight + vGap;
     });
   }
 
-  // 🌟 回溯计算完整子树的世界坐标包围盒
   if (node.children && !node.collapsed) {
     for (let c of node.children) {
       if (c.treeMinX !== undefined) {

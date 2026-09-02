@@ -75,7 +75,7 @@ export function initSearchEngine(renderApp) {
       if (ancestors) ancestors.forEach(a => { if (a.id !== targetId) a.collapsed = false; });
       state.selectedIds = new Set([targetId]);
       renderApp();
-      smartCenterOnSelectedNode(state, true);
+      import("../core/camera.js").then(m => m.ensureNodeVisible(findNode(targetId, state.mindData), true));
     }
   }
 

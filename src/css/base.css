@@ -27,7 +27,9 @@
   user-select: none !important; 
   -webkit-user-select: none !important; 
   -moz-user-select: none !important; 
-  -webkit-font-smoothing: antialiased; 
+  -webkit-font-smoothing: antialiased;
+  -webkit-corner-smoothing: 0.62 !important;
+  corner-smoothing: 0.62 !important; 
 }
 #svg-canvas, #svg-canvas *, .svg-node, .svg-node * {
   user-select: none !important;

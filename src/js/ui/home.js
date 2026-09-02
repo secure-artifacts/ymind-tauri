@@ -1,54 +1,65 @@
-import { state, createNewTab, getActiveTab } from '../core/state.js';
-import { TEMPLATES } from '../data/templates.js';
-import { camera } from '../core/camera.js';
-import { syncInspectorUi } from './inspector.js';
-import { syncSettingsForm } from './settings.js';
+import { state, createNewTab } from "../core/state.js";
+import { TEMPLATES } from "../data/templates.js";
+import { camera } from "../core/camera.js";
+import { syncInspectorUi, applyCanvasThemeToBody } from "./inspector.js";
+import { syncSettingsForm } from "./settings.js";
+import { encryptMindPayload } from "../storage/crypto.js";
+import { showLockScreen, updateSecurityDockStatus } from "./vault.js";
 
-const RECENT_KEY = "YMIND_PRO_RECENT_DOCS";
+const RECENT_KEY = "YMIND_PRO_RECENT_DOCS_V2";
 let activeHomeNav = "home";
-let cachedRecentDocs = null;
 let activeTemplateCategory = "all";
 
 export function getRecentDocs() {
-  if (cachedRecentDocs) return cachedRecentDocs;
   try {
     const raw = localStorage.getItem(RECENT_KEY);
-    cachedRecentDocs = raw ? JSON.parse(raw) : [];
-    return cachedRecentDocs;
+    if (!raw) return [];
+    return JSON.parse(raw);
   } catch {
     return [];
   }
 }
 
-export function recordRecentDoc(title, data, layout = "mindmap", filePath = null, styles = {}) {
-  setTimeout(() => {
-    try {
-      let recents = getRecentDocs();
-      const existingIdx = recents.findIndex(r => r.title === title || (filePath && r.filePath === filePath));
-      const item = {
-        id: "doc_" + Date.now(),
-        title: title || "未命名导图",
-        filePath: filePath || (existingIdx >= 0 ? recents[existingIdx].filePath : null),
-        time: Date.now(),
-        layout: layout,
-        colorPalette: styles.colorPalette || (existingIdx >= 0 ? recents[existingIdx].colorPalette : "apple-classic"),
-        lineStyle: styles.lineStyle || (existingIdx >= 0 ? recents[existingIdx].lineStyle : "curve"),
-        boxStyle: styles.boxStyle || (existingIdx >= 0 ? recents[existingIdx].boxStyle : "squircle"),
-        canvasTheme: styles.canvasTheme || (existingIdx >= 0 ? recents[existingIdx].canvasTheme : "studio-light"),
-        starred: existingIdx >= 0 ? recents[existingIdx].starred : false,
-        nodeCount: countNodes(data),
-        data: JSON.parse(JSON.stringify(data))
-      };
+export async function recordRecentDoc(title, data, layout = "mindmap", filePath = null, styles = {}, isEncrypted = false, password = null, passwordHint = "", encryptedVault = null) {
+  try {
+    let recents = getRecentDocs();
+    const docTitle = title || "未命名导图";
+    const existingIdx = recents.findIndex(r => (filePath && r.filePath === filePath) || r.title === docTitle);
 
-      if (existingIdx >= 0) recents.splice(existingIdx, 1);
-      recents.unshift(item);
-      if (recents.length > 30) recents.pop();
-      cachedRecentDocs = recents;
-      localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
-    } catch (e) {
-      console.warn("记录最近文档失败", e);
+    let finalVault = encryptedVault;
+    // 如果是加密导图，绝对不在本地持久化明文树，立即生成密文包
+    if (isEncrypted && data && password && !finalVault) {
+      finalVault = await encryptMindPayload(data, password, passwordHint);
     }
-  }, 60);
+
+    const item = {
+      id: existingIdx >= 0 ? recents[existingIdx].id : ("doc_" + Date.now()),
+      title: docTitle,
+      filePath: filePath || (existingIdx >= 0 ? recents[existingIdx].filePath : null),
+      time: Date.now(),
+      layout: layout || (existingIdx >= 0 ? recents[existingIdx].layout : "mindmap"),
+      colorPalette: styles.colorPalette || (existingIdx >= 0 ? recents[existingIdx].colorPalette : "apple-classic"),
+      lineStyle: styles.lineStyle || (existingIdx >= 0 ? recents[existingIdx].lineStyle : "curve"),
+      boxStyle: styles.boxStyle || (existingIdx >= 0 ? recents[existingIdx].boxStyle : "squircle"),
+      canvasTheme: styles.canvasTheme || (existingIdx >= 0 ? recents[existingIdx].canvasTheme : "studio-light"),
+      canvasBgColor: styles.canvasBgColor || (existingIdx >= 0 ? recents[existingIdx].canvasBgColor : "studio-white"),
+      canvasBgPattern: styles.canvasBgPattern || (existingIdx >= 0 ? recents[existingIdx].canvasBgPattern : "dots"),
+      starred: existingIdx >= 0 ? Boolean(recents[existingIdx].starred) : false,
+      isEncrypted: Boolean(isEncrypted),
+      passwordHint: passwordHint || (finalVault?.hint || ""),
+      encryptedVault: isEncrypted ? finalVault : null,
+      nodeCount: isEncrypted ? (existingIdx >= 0 ? recents[existingIdx].nodeCount : 1) : countNodes(data),
+      // 加密状态下完全置空明文数据
+      data: isEncrypted ? null : (data ? JSON.parse(JSON.stringify(data)) : { id: "root", text: docTitle, children: [] })
+    };
+
+    if (existingIdx >= 0) recents.splice(existingIdx, 1);
+    recents.unshift(item);
+    if (recents.length > 50) recents.pop();
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
+  } catch (e) {
+    console.error("记录最近文档失败", e);
+  }
 }
 
 function countNodes(node) {
@@ -70,7 +81,6 @@ export function toggleStarDoc(docId, renderHome) {
 
 export function removeRecentDoc(docId, renderHome) {
   let recents = getRecentDocs().filter(r => r.id !== docId);
-  cachedRecentDocs = recents;
   localStorage.setItem(RECENT_KEY, JSON.stringify(recents));
   renderHome();
 }
@@ -88,67 +98,77 @@ function formatTimeAgo(ts) {
 }
 
 function openOrSwitchDoc(doc, openWorkspace) {
-  if (!doc || !doc.data) return;
+  if (!doc) return;
   const docTitle = doc.title;
-  const docData = doc.data;
-  const docLayout = doc.layout || "mindmap";
   const docFilePath = doc.filePath || null;
-  const docPalette = doc.colorPalette || "apple-classic";
-  const docLine = doc.lineStyle || "curve";
-  const docBox = doc.boxStyle || "squircle";
-  const docTheme = doc.canvasTheme || "studio-light";
-
   const existingTab = state.tabs.find(t => (docFilePath && t.filePath === docFilePath) || t.title === docTitle);
 
   if (existingTab) {
     state.activeTabId = existingTab.id;
     camera.transform = existingTab.camera;
-    document.body.className = `theme-${existingTab.canvasTheme || 'studio-light'}`;
+    applyCanvasThemeToBody(existingTab.canvasBgColor || "studio-white", existingTab.canvasBgPattern || "dots");
     openWorkspace();
     syncInspectorUi();
+    if (existingTab.isEncrypted && existingTab._isLocked) {
+      showLockScreen(existingTab);
+    }
     return;
   }
 
   const newTab = createNewTab();
   newTab.title = docTitle;
   newTab.filePath = docFilePath;
-  newTab.mindData = JSON.parse(JSON.stringify(docData));
-  newTab.layoutStructure = docLayout;
-  newTab.colorPalette = docPalette;
-  newTab.lineStyle = docLine;
-  newTab.boxStyle = docBox;
-  newTab.canvasTheme = docTheme;
-  newTab.selectedIds = new Set([newTab.mindData.id || "root"]);
-  newTab.focusedRootId = newTab.mindData.id || "root";
-  newTab.history = [JSON.stringify(newTab.mindData)];
-  newTab.historyIndex = 0;
+  newTab.layoutStructure = doc.layout || "mindmap";
+  newTab.colorPalette = doc.colorPalette || "apple-classic";
+  newTab.lineStyle = doc.lineStyle || "curve";
+  newTab.boxStyle = doc.boxStyle || "squircle";
+  newTab.canvasTheme = doc.canvasTheme || "studio-light";
+  newTab.canvasBgColor = doc.canvasBgColor || "studio-white";
+  newTab.canvasBgPattern = doc.canvasBgPattern || "dots";
   newTab.isDirty = false;
   camera.transform = newTab.camera;
 
-  document.body.className = `theme-${docTheme}`;
+  if (doc.isEncrypted) {
+    // 🛡️ 加密文档进入隔离锁屏态，绝不加载任何明文
+    newTab.isEncrypted = true;
+    newTab.encryptedVault = doc.encryptedVault;
+    newTab.passwordHint = doc.passwordHint || "";
+    newTab.mindData = { id: "root", text: "🔒 " + docTitle, children: [] };
+    newTab.history = [];
+    newTab._isLocked = true;
+  } else {
+    newTab.isEncrypted = false;
+    newTab.encryptedVault = null;
+    newTab.mindData = doc.data ? JSON.parse(JSON.stringify(doc.data)) : { id: "root", text: docTitle, children: [] };
+    newTab.selectedIds = new Set([newTab.mindData.id || "root"]);
+    newTab.focusedRootId = newTab.mindData.id || "root";
+    newTab.history = [JSON.stringify(newTab.mindData)];
+    newTab.historyIndex = 0;
+  }
 
-  recordRecentDoc(docTitle, newTab.mindData, docLayout, docFilePath, {
-    colorPalette: docPalette,
-    lineStyle: docLine,
-    boxStyle: docBox,
-    canvasTheme: docTheme
-  });
-
+  applyCanvasThemeToBody(newTab.canvasBgColor, newTab.canvasBgPattern);
   openWorkspace();
   syncInspectorUi();
+  updateSecurityDockStatus();
+
+  if (newTab.isEncrypted && newTab._isLocked) {
+    showLockScreen(newTab);
+  }
 }
 
 function openTemplateDoc(tpl, openWorkspace) {
   const newTab = createNewTab(tpl.id);
   newTab.filePath = null;
   camera.transform = newTab.camera;
-  document.body.className = `theme-${newTab.canvasTheme || 'studio-light'}`;
+  applyCanvasThemeToBody(newTab.canvasBgColor || "studio-white", newTab.canvasBgPattern || "dots");
   recordRecentDoc(tpl.name, newTab.mindData, tpl.layout, null, {
     colorPalette: newTab.colorPalette,
     lineStyle: newTab.lineStyle,
     boxStyle: newTab.boxStyle,
-    canvasTheme: newTab.canvasTheme
-  });
+    canvasTheme: newTab.canvasTheme,
+    canvasBgColor: newTab.canvasBgColor,
+    canvasBgPattern: newTab.canvasBgPattern
+  }, false);
   openWorkspace();
   syncInspectorUi();
 }
@@ -276,15 +296,17 @@ function renderDocList(containerId, docs, renderApp, openWorkspace) {
     }[doc.layout] || "思维导图";
 
     row.innerHTML = `
-      <div class="doc-icon-wrap">📄</div>
+      <div class="doc-icon-wrap">${doc.isEncrypted ? "🔒" : "📄"}</div>
       <div class="doc-main-info">
-        <div class="doc-title">${doc.title}</div>
+        <div class="doc-title">${doc.title} ${doc.isEncrypted ? '<span class="apple-tag p1" style="font-size:9px;margin-left:4px;">AES-256</span>' : ''}</div>
         <div class="doc-meta">
           <span class="doc-time">${formatTimeAgo(doc.time)}</span>
           <span class="doc-dot">·</span>
           <span class="doc-badge">${layoutLabel}</span>
           <span class="doc-dot">·</span>
-          <span class="doc-count">${doc.nodeCount || 1} 个节点</span><span class="doc-dot">·</span><span class="doc-path" title="${doc.filePath || '本地草稿'}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${doc.filePath || '本地草稿'}</span>
+          <span class="doc-count">${doc.isEncrypted ? "加密保护" : (doc.nodeCount || 1) + " 个节点"}</span>
+          <span class="doc-dot">·</span>
+          <span class="doc-path" title="${doc.filePath || '本地草稿'}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${doc.filePath || '本地草稿'}</span>
         </div>
       </div>
       <div class="doc-actions">
@@ -306,15 +328,13 @@ function renderDocList(containerId, docs, renderApp, openWorkspace) {
 }
 
 export function initHomeEvents(renderApp, openWorkspace) {
-  const navWorkspaceBtn = document.getElementById("nav-btn-workspace");
-  if (navWorkspaceBtn) {
-    navWorkspaceBtn.onclick = () => { if (state.tabs.length > 0) openWorkspace(); };
-  }
+  document.getElementById("nav-btn-workspace")?.addEventListener("click", () => {
+    if (state.tabs.length > 0) openWorkspace();
+  });
 
-  const quickResumeBtn = document.getElementById("btn-quick-resume");
-  if (quickResumeBtn) {
-    quickResumeBtn.onclick = () => { if (state.tabs.length > 0) openWorkspace(); };
-  }
+  document.getElementById("btn-quick-resume")?.addEventListener("click", () => {
+    if (state.tabs.length > 0) openWorkspace();
+  });
 
   document.querySelectorAll(".home-nav-item[data-nav]").forEach(item => {
     item.onclick = () => {

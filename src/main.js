@@ -1,20 +1,20 @@
-import { initNotesDrawer, openNotesDrawer } from './js/ui/notes.js';
-import { initVaultManager } from "./js/ui/vault.js";
-import { initFlashcards, openFlashcardModal, toggleRecallMode } from './js/ui/flashcards.js';
-import { state, saveSnapshot, getActiveTab, createNewTab, applyGlobalTypography } from "./js/core/state.js";
-import { render, updateSelectionStyles } from "./js/render/render.js";
+import { state, getActiveTab, createNewTab } from "./js/core/state.js";
+import { render } from "./js/render/render.js";
 import { renderOutliner } from "./js/render/outliner.js";
-import { updateMinimap } from "./js/render/minimap.js";
-import { camera, requestTransformUpdate, smartCenterOnSelectedNode } from "./js/core/camera.js";
+import { camera, requestTransformUpdate, smartCenterOnSelectedNode, locateFocusedNode } from "./js/core/camera.js";
 import { initEventListeners } from "./js/ui/events.js";
-import { syncInspectorUi } from "./js/ui/inspector.js";
+import { syncInspectorUi, applyCanvasThemeToBody, initInspectorEvents } from "./js/ui/inspector.js";
+import { renderHomeHub, initHomeEvents, recordRecentDoc } from "./js/ui/home.js";
+import { renderTabBar, initTabBar } from "./js/core/tab-manager.js";
+import { initNotesDrawer, openNotesDrawer } from "./js/ui/notes.js";
+import { initFlashcards, toggleRecallMode, openFlashcardModal } from "./js/ui/flashcards.js";
+import { initVaultManager, showLockScreen, hideLockScreen, updateSecurityDockStatus } from "./js/ui/vault.js";
 import { initContextMenu } from "./js/ui/contextmenu.js";
 import { initSearchEngine } from "./js/ui/search.js";
-import { initAutoSaveEngine } from "./js/storage/storage.js";
-import { renderHomeHub, initHomeEvents, switchHomeTab } from "./js/ui/home.js";
-import { renderTabBar, initTabBar } from "./js/core/tab-manager.js";
-import { initSettingsViewEvents } from "./js/ui/settings.js";
 import { initIconPicker } from "./js/ui/icon-picker.js";
+import { initAutoSaveEngine, openVersionHistoryModal, closeVersionHistoryModal, clearAllSnapshots, renderHistoryList } from "./js/storage/storage.js";
+import { initSettingsViewEvents } from "./js/ui/settings.js";
+
 const homeView = document.getElementById("home-view");
 const workspaceView = document.getElementById("workspace-view");
 
@@ -22,113 +22,180 @@ export function showWorkspace() {
   if (state.tabs.length === 0) createNewTab();
   if (homeView) homeView.classList.add("hidden");
   if (workspaceView) workspaceView.classList.remove("hidden");
-  window.__WORKSPACE_OPENED_TIME__ = Date.now();
-  renderApp();
-  const currentTab = getActiveTab();
-  if (currentTab) {
-    camera.transform = currentTab.camera;
-    document.body.className = `theme-${currentTab.canvasTheme || "studio-light"}`;
+
+  const cur = getActiveTab();
+  if (cur) {
+    camera.transform = cur.camera;
+    applyCanvasThemeToBody(cur.canvasBgColor || "studio-white", cur.canvasBgPattern || "dots");
+    if (cur.isEncrypted && cur._isLocked) {
+      showLockScreen(cur);
+    } else {
+      hideLockScreen();
+    }
   }
-  smartCenterOnSelectedNode(state, false);
+
   renderApp();
+  smartCenterOnSelectedNode(state, false);
   syncInspectorUi();
-  if (window.__SYNC_VAULT_UI__) window.__SYNC_VAULT_UI__();
+  updateSecurityDockStatus();
 }
 
 export function showHome() {
+  const cur = getActiveTab();
+  if (cur && !cur._isLocked) {
+    recordRecentDoc(cur.title, cur.mindData, cur.layoutStructure, cur.filePath, {
+      colorPalette: cur.colorPalette,
+      lineStyle: cur.lineStyle,
+      boxStyle: cur.boxStyle,
+      canvasBgColor: cur.canvasBgColor,
+      canvasBgPattern: cur.canvasBgPattern
+    }, cur.isEncrypted, cur.password, cur.passwordHint, cur.encryptedVault);
+  }
+  hideLockScreen();
   if (workspaceView) workspaceView.classList.add("hidden");
   if (homeView) homeView.classList.remove("hidden");
   renderHomeHub(renderApp, showWorkspace);
 }
 
-export function openSettingsView() {
-  showHome();
-  switchHomeTab("settings", renderApp, showWorkspace);
-}
-
 window.__SHOW_WORKSPACE__ = showWorkspace;
-window.__OPEN_NODE_NOTES__ = openNotesDrawer;
-window.__OPEN_SETTINGS_VIEW__ = openSettingsView;
+window.__SHOW_HOME__ = showHome;
 
 function renderApp() {
-  if (state.tabs.length === 0) {
-    showHome();
-    return;
-  }
+  if (state.tabs.length === 0) { showHome(); return; }
 
   renderTabBar(renderApp, showHome);
 
+  const curTab = getActiveTab();
   const viewport = document.getElementById("viewport");
   const outlinerView = document.getElementById("outliner-view");
-  const btnModeMindmap = document.getElementById("btn-mode-mindmap");
-  const btnModeOutliner = document.getElementById("btn-mode-outliner");
+  const btnMind = document.getElementById("btn-mode-mindmap");
+  const btnOut = document.getElementById("btn-mode-outliner");
+
+  if (curTab?.isEncrypted && curTab?._isLocked) {
+    outlinerView?.classList.add("hidden");
+    viewport?.classList.remove("hidden");
+    const layerNodes = document.getElementById("layer-nodes");
+    const layerConns = document.getElementById("layer-connections");
+    if (layerNodes) layerNodes.innerHTML = "";
+    if (layerConns) layerConns.innerHTML = "";
+    showLockScreen(curTab);
+    return;
+  }
 
   if (state.viewMode === "outliner") {
-    if (viewport) viewport.classList.add("hidden");
-    if (outlinerView) outlinerView.classList.remove("hidden");
-    if (btnModeMindmap) btnModeMindmap.classList.remove("active-mode");
-    if (btnModeOutliner) btnModeOutliner.classList.add("active-mode");
-    document.querySelectorAll(".mindmap-only-control").forEach(el => el.style.display = "none");
+    viewport?.classList.add("hidden");
+    outlinerView?.classList.remove("hidden");
+    btnMind?.classList.remove("active-mode");
+    btnOut?.classList.add("active-mode");
     renderOutliner(renderApp);
   } else {
-    if (outlinerView) outlinerView.classList.add("hidden");
-    if (viewport) viewport.classList.remove("hidden");
-    if (btnModeOutliner) btnModeOutliner.classList.remove("active-mode");
-    if (btnModeMindmap) btnModeMindmap.classList.add("active-mode");
-    document.querySelectorAll(".mindmap-only-control").forEach(el => el.style.display = "");
+    outlinerView?.classList.add("hidden");
+    viewport?.classList.remove("hidden");
+    btnOut?.classList.remove("active-mode");
+    btnMind?.classList.add("active-mode");
     render(state, {
       onRender: renderApp,
-      onSelect: (id, isMulti) => {
-        if (isMulti) {
-          if (state.selectedIds.has(id)) {
-            if (state.selectedIds.size > 1) state.selectedIds.delete(id);
-          } else {
-            state.selectedIds.add(id);
-          }
-        } else {
-          state.selectedIds = new Set([id]);
-        }
-        updateSelectionStyles(state);
-      },
-      onSelectRoot: (id) => {
-        state.focusedRootId = id;
+      onSelect: (id) => {
         state.selectedIds = new Set([id]);
         renderApp();
-        smartCenterOnSelectedNode(state);
+        locateFocusedNode(id, true);
       },
       onRequestTransform: requestTransformUpdate
     });
-    updateMinimap();
   }
 }
 
 window.__RENDER_APP__ = renderApp;
 
 document.getElementById("btn-back-home")?.addEventListener("click", showHome);
-document.getElementById("btn-open-settings")?.addEventListener("click", openSettingsView);
+document.getElementById("btn-mode-mindmap")?.addEventListener("click", () => {
+  const t = getActiveTab();
+  if (t) { t.viewMode = "mindmap"; renderApp(); }
+});
+document.getElementById("btn-mode-outliner")?.addEventListener("click", () => {
+  const t = getActiveTab();
+  if (t?.isEncrypted && t?._isLocked) return;
+  if (t) { t.viewMode = "outliner"; renderApp(); }
+});
+document.getElementById("btn-mode-flashcards")?.addEventListener("click", () => {
+  const t = getActiveTab();
+  if (t?.isEncrypted && t?._isLocked) return;
+  openFlashcardModal();
+});
+document.getElementById("btn-active-recall")?.addEventListener("click", () => {
+  const t = getActiveTab();
+  if (t?.isEncrypted && t?._isLocked) return;
+  toggleRecallMode(renderApp);
+});
 
-window.addEventListener("keydown", (e) => {
-  if (homeView && !homeView.classList.contains("hidden")) {
-    if ((e.key === "Escape" || (e.altKey && e.key.toLowerCase() === "m")) && state.tabs.length > 0) {
-      e.preventDefault();
-      showWorkspace();
-    }
+// 快照时光机
+document.getElementById("btn-open-history")?.addEventListener("click", () => openVersionHistoryModal(renderApp));
+document.getElementById("nav-btn-history")?.addEventListener("click", () => openVersionHistoryModal(renderApp));
+document.getElementById("btn-history-close")?.addEventListener("click", closeVersionHistoryModal);
+document.getElementById("btn-create-manual-snap")?.addEventListener("click", () => {
+  const cur = getActiveTab();
+  if (cur && !cur._isLocked) {
+    import("./js/storage/storage.js").then(m => {
+      m.createVersionSnapshot(cur, 'manual');
+      m.renderHistoryList(document.getElementById("history-search-input")?.value || "", renderApp);
+      import("./js/ui/dialog.js").then(d => d.showToast("📸 当前版本快照已拍摄保存"));
+    });
+  }
+});
+document.getElementById("btn-history-clear-all")?.addEventListener("click", async () => {
+  const { appConfirm, showToast } = await import("./js/ui/dialog.js");
+  const ok = await appConfirm({
+    title: "彻底粉碎快照库",
+    message: "确定要永久清空所有历史版本快照吗？此操作无法撤销！",
+    isDanger: true,
+    confirmText: "立即彻底粉碎"
+  });
+  if (ok) {
+    clearAllSnapshots();
+    renderHistoryList("", renderApp);
+    showToast("🗑️ 所有历史快照已被永久粉碎");
+  }
+});
+document.getElementById("history-search-input")?.addEventListener("input", (e) => {
+  renderHistoryList(e.target.value, renderApp);
+});
+
+// 🛡️ 窗口关闭/刷新防丢拦截
+window.addEventListener("beforeunload", (e) => {
+  const hasUnsaved = state.tabs.some(t => t.isDirty && !t._isLocked);
+  if (hasUnsaved) {
+    e.preventDefault();
+    e.returnValue = "您有未保存的导图修改，确定要关闭退出吗？";
+    return e.returnValue;
   }
 });
 
-applyGlobalTypography();
-saveSnapshot();
+window.addEventListener("keydown", (e) => {
+  const lockScreen = document.getElementById("canvas-vault-lock-screen");
+  if (lockScreen && !lockScreen.classList.contains("hidden") && e.key === "Escape") {
+    e.preventDefault();
+    showHome();
+    return;
+  }
+  if (homeView && !homeView.classList.contains("hidden") && e.key === "Escape" && state.tabs.length > 0) {
+    e.preventDefault();
+    showWorkspace();
+  }
+});
+
+// 初始化全套核心生命周期与交互引擎
 initTabBar(renderApp, showHome);
 initEventListeners(renderApp);
-initContextMenu(renderApp);
-initSearchEngine(renderApp);
-initAutoSaveEngine(renderApp);
 initHomeEvents(renderApp, showWorkspace);
-initSettingsViewEvents(renderApp);
-initIconPicker(renderApp);
 initNotesDrawer(renderApp);
 initFlashcards(renderApp);
 initVaultManager(renderApp);
+initContextMenu(renderApp);
+initSearchEngine(renderApp);
+initIconPicker(renderApp);
+initAutoSaveEngine(renderApp);
+initSettingsViewEvents(renderApp);
+initInspectorEvents(renderApp);
 
 showHome();
-console.log("🚀 [YMind Pro] 200+ 专属图标体系与渲染引擎就绪！");
+console.log("🛡️ [YMind Pro Studio] 未保存修改防丢与关闭确认拦截系统已就绪！");

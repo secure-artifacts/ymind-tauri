@@ -1,13 +1,13 @@
-import { getGlobalSettings, saveGlobalSettings, getDefaultSettings } from '../core/state.js';
-import { showToast } from './dialog.js';
+import { getGlobalSettings, saveGlobalSettings, getDefaultSettings } from "../core/state.js";
+import { showToast } from "./dialog.js";
+import { restartAutoSaveEngine } from "../storage/storage.js";
 
 let scannedFontsCache = null;
 const customSelectRegistry = new Map();
 
-// ======================== Apple 高定自定义下拉组件驱动 ========================
 export function createCustomSelect(containerId, optionsData, initialValue, onChange) {
   const container = document.getElementById(containerId);
-  if (!container) return;
+  if (!container) return null;
 
   container.className = "apple-custom-select";
   container.dataset.value = initialValue;
@@ -24,9 +24,9 @@ export function createCustomSelect(containerId, optionsData, initialValue, onCha
       group.items.forEach(item => {
         const isSelected = item.value === currentVal;
         optionsHtml += `
-          <div class="apple-custom-option ${isSelected ? 'selected' : ''}" data-val="${escapeHtml(item.value)}" data-label="${escapeHtml(item.label)}">
+          <div class="apple-custom-option ${isSelected ? "selected" : ""}" data-val="${escapeHtml(item.value)}" data-label="${escapeHtml(item.label)}">
             <span>${item.label}</span>
-            ${isSelected ? '<span class="apple-custom-check">✓</span>' : ''}
+            ${isSelected ? "<span class=\"apple-custom-check\">✓</span>" : ""}
           </div>
         `;
       });
@@ -58,7 +58,7 @@ export function createCustomSelect(containerId, optionsData, initialValue, onCha
         container.dataset.value = currentVal;
         container.classList.remove("open");
         render();
-        if (typeof onChange === 'function') onChange(currentVal);
+        if (typeof onChange === "function") onChange(currentVal);
       };
     });
   }
@@ -96,7 +96,7 @@ function findLabelByValue(optionsData, val) {
 }
 
 function escapeHtml(str) {
-  return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(str || "").replace(/[&<>"\x27]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "\x27": "&#39;" }[c]));
 }
 
 window.addEventListener("click", (e) => {
@@ -105,12 +105,11 @@ window.addEventListener("click", (e) => {
   }
 });
 
-// ======================== 本地字体自动探测引擎 ========================
 export async function scanSystemFonts() {
   const chineseSet = new Set();
   const englishSet = new Set();
 
-  if (typeof window.queryLocalFonts === 'function') {
+  if (typeof window.queryLocalFonts === "function") {
     try {
       const fontList = await window.queryLocalFonts();
       fontList.forEach(f => {
@@ -119,9 +118,7 @@ export async function scanSystemFonts() {
         if (isChineseFont(fam)) chineseSet.add(fam);
         else englishSet.add(fam);
       });
-    } catch (e) {
-      console.warn("Local font query bypassed", e);
-    }
+    } catch (e) {}
   }
 
   const presetZh = [
@@ -165,9 +162,9 @@ function checkFontAvailable(fontName) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return false;
 
-  ctx.font = '72px monospace';
+  ctx.font = "72px monospace";
   const baselineMono = ctx.measureText(testStr).width;
-  ctx.font = '72px sans-serif';
+  ctx.font = "72px sans-serif";
   const baselineSans = ctx.measureText(testStr).width;
 
   ctx.font = `72px "${fontName}", monospace`;
@@ -178,7 +175,6 @@ function checkFontAvailable(fontName) {
   return m !== baselineMono || s !== baselineSans;
 }
 
-// ======================== 初始化所有设置下拉列表 ========================
 export async function syncSettingsForm() {
   const s = getGlobalSettings();
 
@@ -246,11 +242,31 @@ export async function syncSettingsForm() {
     ]
   }];
 
+  const autoSaveOpts = [{
+    items: [
+      { value: "0", label: "🚫 关闭自动保存 (不自动保存)" },
+      { value: "15", label: "⏱️ 每 15 秒 (高频极速)" },
+      { value: "30", label: "⏱️ 每 30 秒 (推荐默认)" },
+      { value: "60", label: "⏱️ 每 1 分钟" },
+      { value: "300", label: "⏱️ 每 5 分钟" },
+      { value: "600", label: "⏱️ 每 10 分钟" }
+    ]
+  }];
+
   createCustomSelect("wrap-setting-default-layout", layoutOpts, s.layout);
   createCustomSelect("wrap-setting-default-palette", paletteOpts, s.palette);
   createCustomSelect("wrap-setting-default-line", lineOpts, s.lineStyle);
   createCustomSelect("wrap-setting-default-box", boxOpts, s.boxStyle);
   createCustomSelect("wrap-setting-default-theme", themeOpts, s.canvasTheme);
+  createCustomSelect("wrap-setting-auto-save", autoSaveOpts, s.autoSaveInterval || "30");
+  const focusFollowOpts = [{
+    items: [
+      { value: "smooth", label: "🚀 开启平滑移动 (推荐默认 · 流畅动画)" },
+      { value: "instant", label: "⚡ 瞬时直达定位 (无动画直接跳转)" },
+      { value: "off", label: "🚫 关闭移动定位 (保持画布视口不动)" }
+    ]
+  }];
+  createCustomSelect("wrap-setting-focus-follow", focusFollowOpts, s.focusFollowMode || "smooth");
 
   if (!scannedFontsCache) {
     const fonts = await scanSystemFonts();
@@ -265,12 +281,12 @@ function applyFontOptions(fonts, curEn, curZh) {
     {
       title: "🌟 推荐西文字体",
       items: [
-        { value: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif', label: ' Apple SF Pro (苹果经典原生)' },
-        { value: '"Inter", -apple-system, sans-serif', label: 'Inter (高清晰度现代几何无衬线)' },
-        { value: '"Helvetica Neue", Helvetica, Arial, sans-serif', label: 'Helvetica Neue (包豪斯排版经典)' },
-        { value: '"Roboto", sans-serif', label: 'Roboto (Google Material 精致字体)' },
-        { value: '"JetBrains Mono", "SF Mono", monospace', label: 'JetBrains Mono (极客等宽编程字体)' },
-        { value: '"Chalkboard SE", "Comic Sans MS", cursive', label: 'Chalkboard (灵动自然手写手绘)' }
+        { value: "-apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"SF Pro Text\", sans-serif", label: " Apple SF Pro (苹果经典原生)" },
+        { value: "\"Inter\", -apple-system, sans-serif", label: "Inter (高清晰度现代几何无衬线)" },
+        { value: "\"Helvetica Neue\", Helvetica, Arial, sans-serif", label: "Helvetica Neue (包豪斯排版经典)" },
+        { value: "\"Roboto\", sans-serif", label: "Roboto (Google Material 精致字体)" },
+        { value: "\"JetBrains Mono\", \"SF Mono\", monospace", label: "JetBrains Mono (极客等宽编程字体)" },
+        { value: "\"Chalkboard SE\", \"Comic Sans MS\", cursive", label: "Chalkboard (灵动自然手写手绘)" }
       ]
     }
   ];
@@ -286,11 +302,11 @@ function applyFontOptions(fonts, curEn, curZh) {
     {
       title: "🌟 推荐中文字体",
       items: [
-        { value: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', label: ' 苹方 / 冬青黑体 (PingFang SC)' },
-        { value: '"Microsoft YaHei", "微软雅黑", sans-serif', label: '微软雅黑 (Microsoft YaHei)' },
-        { value: '"STKaiti", "KaiTi", "楷体", serif', label: '华文楷体 / 楷体 (STKaiti)' },
-        { value: '"Songti SC", "SimSun", "宋体", serif', label: '宋体 / 仿宋 (Songti SC)' },
-        { value: 'system-ui, sans-serif', label: '跟随操作系统环境默认' }
+        { value: "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif", label: " 苹方 / 冬青黑体 (PingFang SC)" },
+        { value: "\"Microsoft YaHei\", \"微软雅黑\", sans-serif", label: "微软雅黑 (Microsoft YaHei)" },
+        { value: "\"STKaiti\", \"KaiTi\", \"楷体\", serif", label: "华文楷体 / 楷体 (STKaiti)" },
+        { value: "\"Songti SC\", \"SimSun\", \"宋体\", serif", label: "宋体 / 仿宋 (Songti SC)" },
+        { value: "system-ui, sans-serif", label: "跟随操作系统环境默认" }
       ]
     }
   ];
@@ -320,8 +336,8 @@ export function updateTypographyPreview() {
   const previewBox = document.getElementById("settings-font-preview");
   if (!previewBox) return;
 
-  const fontEn = ctrlEn ? ctrlEn.getValue() : '-apple-system, BlinkMacSystemFont, "SF Pro Text"';
-  const fontZh = ctrlZh ? ctrlZh.getValue() : '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+  const fontEn = ctrlEn ? ctrlEn.getValue() : "-apple-system, BlinkMacSystemFont, \"SF Pro Text\"";
+  const fontZh = ctrlZh ? ctrlZh.getValue() : "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif";
   previewBox.style.fontFamily = `${fontEn}, ${fontZh}`;
 }
 
@@ -343,16 +359,19 @@ export function initSettingsViewEvents(renderApp) {
 
   btnSave?.addEventListener("click", () => {
     const newSettings = {
-      fontEn: customSelectRegistry.get("wrap-setting-font-en")?.getValue() || '-apple-system, BlinkMacSystemFont, "SF Pro Text"',
-      fontZh: customSelectRegistry.get("wrap-setting-font-zh")?.getValue() || '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+      fontEn: customSelectRegistry.get("wrap-setting-font-en")?.getValue() || "-apple-system, BlinkMacSystemFont, \"SF Pro Text\"",
+      fontZh: customSelectRegistry.get("wrap-setting-font-zh")?.getValue() || "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif",
       layout: customSelectRegistry.get("wrap-setting-default-layout")?.getValue() || "mindmap",
       palette: customSelectRegistry.get("wrap-setting-default-palette")?.getValue() || "apple-classic",
       lineStyle: customSelectRegistry.get("wrap-setting-default-line")?.getValue() || "curve",
       boxStyle: customSelectRegistry.get("wrap-setting-default-box")?.getValue() || "squircle",
-      canvasTheme: customSelectRegistry.get("wrap-setting-default-theme")?.getValue() || "studio-light"
+      canvasTheme: customSelectRegistry.get("wrap-setting-default-theme")?.getValue() || "studio-light",
+      autoSaveInterval: customSelectRegistry.get("wrap-setting-auto-save")?.getValue() || "30",
+      focusFollowMode: customSelectRegistry.get("wrap-setting-focus-follow")?.getValue() || "smooth"
     };
 
     saveGlobalSettings(newSettings);
+    restartAutoSaveEngine(renderApp);
     renderApp();
     showToast("⚙️ 偏好设置与默认样式已保存并即时生效");
   });
@@ -366,6 +385,8 @@ export function initSettingsViewEvents(renderApp) {
     customSelectRegistry.get("wrap-setting-default-line")?.setValue(def.lineStyle);
     customSelectRegistry.get("wrap-setting-default-box")?.setValue(def.boxStyle);
     customSelectRegistry.get("wrap-setting-default-theme")?.setValue(def.canvasTheme);
+    customSelectRegistry.get("wrap-setting-auto-save")?.setValue(def.autoSaveInterval || "30");
+    customSelectRegistry.get("wrap-setting-focus-follow")?.setValue(def.focusFollowMode || "smooth");
     updateTypographyPreview();
   });
 }

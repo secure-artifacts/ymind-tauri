@@ -30,8 +30,8 @@ export function getAppleSquirclePath(x, y, w, h, r, smoothing = 0.62) {
   `.replace(/\s+/g, ' ').trim();
 }
 
-export function getHandDrawnBoxPath(w, h, seedStr = "node") {
-  let seed = 0;
+export function getHandDrawnBoxPath(w, h, rawSeed = "node") {
+  const seedStr = String(rawSeed || "node"); let seed = 0;
   for (let i = 0; i < seedStr.length; i++) {
     seed = (seed * 37 + seedStr.charCodeAt(i)) % 10000;
   }

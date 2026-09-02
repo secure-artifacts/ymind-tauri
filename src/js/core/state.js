@@ -6,13 +6,18 @@ let cachedGlobalSettings = null;
 
 export function getDefaultSettings() {
   return {
-    fontEn: "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Helvetica Neue\"",
+    fontEn: "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Helvetica Neue\", sans-serif",
     fontZh: "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif",
     layout: "mindmap",
     palette: "apple-classic",
     lineStyle: "curve",
+    nodeSpacing: "normal",
     boxStyle: "squircle",
-    canvasTheme: "studio-light"
+    canvasTheme: "studio-light",
+    canvasBgColor: "studio-white",
+    canvasBgPattern: "dots",
+    focusFollowMode: "smooth",
+    autoSaveInterval: "30"
   };
 }
 
@@ -42,9 +47,10 @@ export function applyGlobalTypography(s = getGlobalSettings()) {
 export const state = {
   tabs: [],
   activeTabId: null,
-  clipboardBranch: null,
   isZenMode: false,
-  editingNodeId: null
+  isRecallMode: false,
+  editingNodeId: null,
+  clipboardBranch: null
 };
 
 export function getActiveTab() {
@@ -66,24 +72,32 @@ Object.defineProperties(state, {
     set(v) { const t = getActiveTab(); if (t) t.focusedRootId = v; }
   },
   layoutStructure: {
-    get() { return getActiveTab()?.layoutStructure || getGlobalSettings().layout; },
+    get() { return getActiveTab()?.layoutStructure || "mindmap"; },
     set(v) { const t = getActiveTab(); if (t) t.layoutStructure = v; }
   },
   colorPalette: {
-    get() { return getActiveTab()?.colorPalette || getGlobalSettings().palette; },
+    get() { return getActiveTab()?.colorPalette || "apple-classic"; },
     set(v) { const t = getActiveTab(); if (t) t.colorPalette = v; }
   },
+  nodeSpacing: {
+    get() { return getActiveTab()?.nodeSpacing || "normal"; },
+    set(v) { const t = getActiveTab(); if (t) t.nodeSpacing = v; }
+  },
   lineStyle: {
-    get() { return getActiveTab()?.lineStyle || getGlobalSettings().lineStyle; },
+    get() { return getActiveTab()?.lineStyle || "curve"; },
     set(v) { const t = getActiveTab(); if (t) t.lineStyle = v; }
   },
   boxStyle: {
-    get() { return getActiveTab()?.boxStyle || getGlobalSettings().boxStyle; },
+    get() { return getActiveTab()?.boxStyle || "squircle"; },
     set(v) { const t = getActiveTab(); if (t) t.boxStyle = v; }
   },
-  canvasTheme: {
-    get() { return getActiveTab()?.canvasTheme || getGlobalSettings().canvasTheme; },
-    set(v) { const t = getActiveTab(); if (t) t.canvasTheme = v; }
+  canvasBgColor: {
+    get() { return getActiveTab()?.canvasBgColor || "studio-white"; },
+    set(v) { const t = getActiveTab(); if (t) t.canvasBgColor = v; }
+  },
+  canvasBgPattern: {
+    get() { return getActiveTab()?.canvasBgPattern || "dots"; },
+    set(v) { const t = getActiveTab(); if (t) t.canvasBgPattern = v; }
   },
   viewMode: {
     get() { return getActiveTab()?.viewMode || "mindmap"; },
@@ -92,18 +106,6 @@ Object.defineProperties(state, {
   isDirty: {
     get() { return getActiveTab()?.isDirty || false; },
     set(v) { const t = getActiveTab(); if (t) t.isDirty = v; }
-  },
-  password: {
-    get() { return getActiveTab()?.password || null; },
-    set(v) { const t = getActiveTab(); if (t) t.password = v; }
-  },
-  isRecallMode: {
-    get() { return getActiveTab()?.isRecallMode || false; },
-    set(v) { const t = getActiveTab(); if (t) t.isRecallMode = v; }
-  },
-  isEncrypted: {
-    get() { return getActiveTab()?.isEncrypted || false; },
-    set(v) { const t = getActiveTab(); if (t) t.isEncrypted = v; }
   }
 });
 
@@ -111,9 +113,7 @@ export function countNodes(node) {
   if (!node) return 0;
   let count = 1;
   if (node.children) {
-    for (let i = 0; i < node.children.length; i++) {
-      count += countNodes(node.children[i]);
-    }
+    for (let i = 0; i < node.children.length; i++) count += countNodes(node.children[i]);
   }
   return count;
 }
@@ -121,14 +121,12 @@ export function countNodes(node) {
 export function saveSnapshot() {
   const tab = getActiveTab();
   if (!tab || !tab.mindData) return;
+  tab.isDirty = true;
   const snapStr = JSON.stringify(tab.mindData);
   if (!tab.history) { tab.history = []; tab.historyIndex = -1; }
   if (tab.historyIndex >= 0 && tab.history[tab.historyIndex] === snapStr) return;
-  if (tab.historyIndex < tab.history.length - 1) {
-    tab.history.splice(tab.historyIndex + 1);
-  }
+  if (tab.historyIndex < tab.history.length - 1) tab.history.splice(tab.historyIndex + 1);
   tab.history.push(snapStr);
-  tab.isDirty = true;
   if (tab.history.length > 50) tab.history.shift();
   else tab.historyIndex++;
 }
@@ -140,8 +138,8 @@ export function undo(renderCallback) {
   try {
     const parsed = JSON.parse(tab.history[tab.historyIndex]);
     tab.mindData = parsed.mindData || parsed;
-  } catch(e) {}
-  cleanInvalidSelections();
+  } catch {}
+  tab.isDirty = true;
   renderCallback();
 }
 
@@ -152,22 +150,9 @@ export function redo(renderCallback) {
   try {
     const parsed = JSON.parse(tab.history[tab.historyIndex]);
     tab.mindData = parsed.mindData || parsed;
-  } catch(e) {}
-  cleanInvalidSelections();
+  } catch {}
+  tab.isDirty = true;
   renderCallback();
-}
-
-export function cleanInvalidSelections() {
-  const tab = getActiveTab();
-  if (!tab) return;
-  const valid = new Set();
-  function check(n) {
-    if (!n) return;
-    if (tab.selectedIds.has(n.id)) valid.add(n.id);
-    if (n.children) n.children.forEach(check);
-  }
-  check(tab.mindData);
-  tab.selectedIds = valid.size > 0 ? valid : new Set([tab.focusedRootId]);
 }
 
 export function findNode(id, node = state.mindData) {
@@ -213,46 +198,42 @@ export function getPrimarySelectedNode() {
 
 export function loadTemplate(templateId) {
   const tpl = TEMPLATES[templateId] || TEMPLATES["mindmap-blank"];
-  const cfg = getGlobalSettings();
   let tab = getActiveTab() || createNewTab(templateId);
   tab.title = tpl.name;
   tab.mindData = JSON.parse(JSON.stringify(tpl.data));
-  tab.layoutStructure = tpl.layout || cfg.layout;
-  tab.colorPalette = cfg.palette;
-  tab.lineStyle = cfg.lineStyle;
-  tab.boxStyle = cfg.boxStyle;
-  tab.canvasTheme = cfg.canvasTheme;
+  tab.layoutStructure = tpl.layout || "mindmap";
+  tab.colorPalette = "apple-classic";
+  tab.lineStyle = "curve";
+  tab.boxStyle = "squircle";
+  tab.canvasBgColor = "studio-white";
+  tab.canvasBgPattern = "dots";
   tab.selectedIds = new Set([tab.mindData.id || "root"]);
   tab.focusedRootId = tab.mindData.id || "root";
-  tab.isEncrypted = false;
-  tab.password = null;
   tab.history = [JSON.stringify(tab.mindData)];
   tab.historyIndex = 0;
-  tab.isDirty = false;
+  tab.isDirty = true;
   return tab;
 }
 
 export function createNewTab(templateId = "mindmap-blank") {
   const tpl = TEMPLATES[templateId] || TEMPLATES["mindmap-blank"];
-  const cfg = getGlobalSettings();
   const newTab = {
     id: "tab_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
     title: tpl.name,
     filePath: null,
-    isDirty: false,
-    isEncrypted: false,
-    password: null,
+    isDirty: true,
     mindData: JSON.parse(JSON.stringify(tpl.data)),
     selectedIds: new Set([tpl.data.id || "root"]),
     focusedRootId: tpl.data.id || "root",
-    layoutStructure: tpl.layout || cfg.layout,
-    colorPalette: cfg.palette,
-    lineStyle: cfg.lineStyle,
-    boxStyle: cfg.boxStyle,
-    canvasTheme: cfg.canvasTheme,
+    layoutStructure: tpl.layout || "mindmap",
+    nodeSpacing: "normal",
+    colorPalette: "apple-classic",
+    lineStyle: "curve",
+    boxStyle: "squircle",
+    canvasBgColor: "studio-white",
+    canvasBgPattern: "dots",
     viewMode: "mindmap",
     camera: { x: window.innerWidth / 3, y: window.innerHeight / 2 - 40, scale: 1 },
-    isRecallMode: false,
     history: [JSON.stringify(tpl.data)],
     historyIndex: 0
   };

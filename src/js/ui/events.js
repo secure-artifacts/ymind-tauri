@@ -1,884 +1,399 @@
-import { initNotesDrawer, openNotesDrawer } from "./notes.js";
-import { initFlashcards, openFlashcardModal, toggleRecallMode } from "./flashcards.js";
-import { state, saveSnapshot, undo, redo, findNode, findParent, getPrimarySelectedNode, getActiveTab, createNewTab } from "../core/state.js";
-import { camera, requestTransformUpdate, smartCenterOnSelectedNode, startInertiaMomentum, stopAllCameraAnimations } from "../core/camera.js";
-import { updateSelectionStyles, startEditNode } from "../render/render.js";
-import { encryptMindPayload, decryptMindPayload, isEncryptedPackage } from "../storage/crypto.js";
+import { state, undo, redo, saveSnapshot, findParent, getActiveTab, createNewTab, getPrimarySelectedNode } from "../core/state.js";
+import { camera, requestTransformUpdate, startInertiaMomentum, stopAllCameraAnimations, locateFocusedNode, smartCenterOnSelectedNode } from "../core/camera.js";
+import { syncInspectorUi, applyCanvasThemeToBody } from "./inspector.js";
+import { openNotesDrawer } from "./notes.js";
+import { openFlashcardModal, toggleRecallMode } from "./flashcards.js";
+import { showToast } from "./dialog.js";
+import { serializeTabToPackage, deserializePackage, parseTextToTree } from "../core/serializer.js";
 import { recordRecentDoc } from "./home.js";
-import { syncInspectorUi } from "./inspector.js";
-import { serializeTabToPackage, deserializePackage } from "../core/serializer.js";
-import { appAlert, appConfirm, appPrompt, showToast } from "./dialog.js";
-import { openVersionHistoryModal, closeVersionHistoryModal, renderHistoryList, createVersionSnapshot, clearAllSnapshots } from "../storage/storage.js";
+import { showLockScreen, lockCurrentTab, openVaultSetModal, updateSecurityDockStatus } from "./vault.js";
+import { closeTabWithConfirm } from "../core/tab-manager.js";
 
-function getTauriInvoke() {
-  return window.__TAURI__?.invoke || window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.core?.invoke || null;
+async function callTauri(cmd, args) {
+  try {
+    if (window.__TAURI__?.core?.invoke) return await window.__TAURI__.core.invoke(cmd, args);
+    if (window.__TAURI__?.invoke) return await window.__TAURI__.invoke(cmd, args);
+    if (window.__TAURI_INTERNALS__?.invoke) return await window.__TAURI_INTERNALS__.invoke(cmd, args);
+  } catch (err) {
+    console.error(`[Tauri IPC Error] ${cmd}:`, err);
+  }
+  return null;
 }
 
-function bindClick(id, handler) {
-  const el = document.getElementById(id);
-  if (el) {
-    el.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      handler(e);
-    };
+function handleArrowNavigation(key, renderApp) {
+  const current = getPrimarySelectedNode();
+  if (!current || !state.mindData) return;
+
+  const root = state.mindData;
+  const isRoot = current.id === (state.focusedRootId || root.id);
+  const parent = findParent(current.id, root);
+  const structure = state.layoutStructure || "mindmap";
+
+  let target = null;
+  if (key === "ArrowRight") {
+    if (isRoot) target = current.rightChildren?.[0] || current.children?.[0];
+    else if (current.branchDirection === "left") target = parent;
+    else if (current.children && current.children.length > 0 && !current.collapsed) target = current.children[0];
+  } else if (key === "ArrowLeft") {
+    if (isRoot) target = current.leftChildren?.[0] || current.children?.[1];
+    else if (current.branchDirection === "left" && current.children?.length > 0 && !current.collapsed) target = current.children[0];
+    else target = parent;
+  } else if (key === "ArrowDown") {
+    if (isRoot && structure === "org-down") target = current.children?.[0];
+    else if (parent?.children) {
+      const idx = parent.children.findIndex(c => c.id === current.id);
+      if (idx >= 0 && idx < parent.children.length - 1) target = parent.children[idx + 1];
+    }
+  } else if (key === "ArrowUp") {
+    if (structure === "org-down" && !isRoot) target = parent;
+    else if (parent?.children) {
+      const idx = parent.children.findIndex(c => c.id === current.id);
+      if (idx > 0) target = parent.children[idx - 1];
+    }
+  }
+
+  if (target) {
+    state.selectedIds = new Set([target.id]);
+    renderApp();
+    locateFocusedNode(target.id, true);
   }
 }
 
 export function initEventListeners(renderApp) {
-  const viewport = document.getElementById("viewport");
-  const marqueeBox = document.getElementById("marquee-box");
-  const modalOverlay = document.getElementById("apple-modal-overlay");
-  const modalTagsList = document.getElementById("modal-tags-list");
-  const modalInput = document.getElementById("modal-input");
-  const fileInput = document.getElementById("global-file-input");
+  const vp = document.getElementById("viewport");
+  const marquee = document.getElementById("marquee-box");
+  let isPanning = false, panStart = { x: 0, y: 0 }, lastPan = { x: 0, y: 0, t: 0 }, panVel = { x: 0, y: 0 };
+  let isMarquee = false, marqueeStart = { x: 0, y: 0 };
 
-  const formatSidebar = document.getElementById("format-sidebar");
-  const btnToggleFormat = document.getElementById("btn-toggle-format");
-  const btnCloseFormat = document.getElementById("btn-close-format");
-  const minimapWidget = document.getElementById("minimap-widget");
-
-  let isDraggingCanvas = false;
-  let isMarqueeActive = false;
-  let marqueeStart = { x: 0, y: 0 };
-  let startPan = { x: 0, y: 0 };
-  let dragStartPos = { x: 0, y: 0 };
-
-  let lastMousePos = { x: 0, y: 0 };
-  let lastMouseTime = 0;
-  let velocity = { x: 0, y: 0 };
-
-  function toggleFormatSidebar(openDirectly = false) {
-    if (!formatSidebar) return;
-    if (openDirectly) {
-      formatSidebar.classList.remove("collapsed");
-      btnToggleFormat?.classList.add("active");
-    } else {
-      const isCollapsed = formatSidebar.classList.toggle("collapsed");
-      btnToggleFormat?.classList.toggle("active", !isCollapsed);
+  vp?.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".svg-node, .svg-badge, .canvas-floating-controls, .minimap-widget, .inline-editor")) return;
+    if (e.shiftKey) {
+      isMarquee = true;
+      const rect = vp.getBoundingClientRect();
+      marqueeStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      if (marquee) {
+        marquee.style.left = `${marqueeStart.x}px`; marquee.style.top = `${marqueeStart.y}px`;
+        marquee.style.width = "0px"; marquee.style.height = "0px";
+        marquee.classList.remove("hidden");
+      }
+      return;
     }
-    syncInspectorUi();
-  }
+    stopAllCameraAnimations();
+    isPanning = true;
+    panVel = { x: 0, y: 0 };
+    panStart = { x: e.clientX - camera.transform.x, y: e.clientY - camera.transform.y };
+    lastPan = { x: e.clientX, y: e.clientY, t: performance.now() };
+  });
 
-  if (btnToggleFormat) btnToggleFormat.onclick = () => toggleFormatSidebar();
-  if (btnCloseFormat) btnCloseFormat.onclick = () => toggleFormatSidebar();
+  window.addEventListener("mousemove", (e) => {
+    if (isPanning) {
+      const now = performance.now(), dt = now - lastPan.t;
+      if (dt > 10) {
+        panVel = { x: (e.clientX - lastPan.x) / dt, y: (e.clientY - lastPan.y) / dt };
+        lastPan = { x: e.clientX, y: e.clientY, t: now };
+      }
+      camera.transform.x = e.clientX - panStart.x;
+      camera.transform.y = e.clientY - panStart.y;
+      requestTransformUpdate();
+    } else if (isMarquee && marquee) {
+      const rect = vp.getBoundingClientRect();
+      const curX = e.clientX - rect.left, curY = e.clientY - rect.top;
+      const minX = Math.min(curX, marqueeStart.x), maxX = Math.max(curX, marqueeStart.x);
+      const minY = Math.min(curY, marqueeStart.y), maxY = Math.max(curY, marqueeStart.y);
+      marquee.style.left = `${minX}px`; marquee.style.top = `${minY}px`;
+      marquee.style.width = `${maxX - minX}px`; marquee.style.height = `${maxY - minY}px`;
 
-  bindClick("btn-open-history", () => openVersionHistoryModal(renderApp));
-  bindClick("nav-btn-history", () => openVersionHistoryModal(renderApp));
-  bindClick("btn-history-close", closeVersionHistoryModal);
-
-  const historySearchInput = document.getElementById("history-search-input");
-  if (historySearchInput) {
-    historySearchInput.oninput = () => renderHistoryList(historySearchInput.value.trim(), renderApp);
-  }
-
-  bindClick("btn-create-manual-snap", () => {
-    const snap = createVersionSnapshot(getActiveTab(), "manual");
-    if (snap) {
-      renderHistoryList(historySearchInput?.value || "", renderApp);
-      showToast(`📸 已为「${snap.tabTitle}」拍摄独立快照！`);
+      const sel = new Set();
+      document.querySelectorAll(".svg-node").forEach(el => {
+        const nr = el.getBoundingClientRect(), nrx = nr.left - rect.left, nry = nr.top - rect.top;
+        if (nrx >= minX && nrx + nr.width <= maxX && nry >= minY && nry + nr.height <= maxY) sel.add(el.dataset.id);
+      });
+      if (sel.size > 0) { state.selectedIds = sel; renderApp(); }
     }
   });
 
-  bindClick("btn-history-clear-all", async () => {
-    const ok = await appConfirm({
-      title: "清空历史快照",
-      message: "确定要清空全部历史快照吗？此操作将永久清理所有版本的备份数据且无法撤销。",
-      isDanger: true,
-      confirmText: "清空全部"
-    });
-    if (ok) {
-      clearAllSnapshots();
-      renderHistoryList("", renderApp);
-      showToast("🗑️ 历史快照已清空");
-    }
+  window.addEventListener("mouseup", () => {
+    if (isPanning && (Math.abs(panVel.x) > 0.3 || Math.abs(panVel.y) > 0.3)) startInertiaMomentum(panVel.x, panVel.y);
+    isPanning = false;
+    if (isMarquee) { isMarquee = false; marquee?.classList.add("hidden"); }
   });
 
-  // 🌟 1. 核心保存引擎：优先通过 Rust 原生写入磁盘
-  async function saveMindMapFile(forceSaveAs = false) {
+  vp?.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 0.92;
+    const rect = vp.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const newScale = Math.min(3.0, Math.max(0.15, camera.transform.scale * factor));
+    camera.transform.x = mx - (mx - camera.transform.x) * (newScale / camera.transform.scale);
+    camera.transform.y = my - (my - camera.transform.y) * (newScale / camera.transform.scale);
+    camera.transform.scale = newScale;
+    requestTransformUpdate();
+    const zt = document.getElementById("txt-zoom-level");
+    if (zt) zt.innerText = `${Math.round(newScale * 100)}%`;
+  }, { passive: false });
+
+  function markDirtyAndRefresh() {
     const tab = getActiveTab();
-    if (!tab || !tab.mindData) {
-      showToast("⚠️ 未找到当前活跃导图");
-      return false;
-    }
-
-    const { filePackage, filenameWithExt } = serializeTabToPackage(tab);
-    const targetFileName = tab.fileName || filenameWithExt;
-    const targetPath = (!forceSaveAs && tab.filePath) ? tab.filePath : null;
-
-    let payload;
-    try {
-      payload = tab.isEncrypted && tab.password
-        ? JSON.stringify(await encryptMindPayload(filePackage, tab.password), null, 2)
-        : JSON.stringify(filePackage, null, 2);
-    } catch (err) {
-      appAlert({ title: "数据打包失败", message: String(err.message || err), type: "error" });
-      return false;
-    }
-
-    // 🦀 级别 1：调用 Rust 原生命令（100% 弹出系统原生选目录窗口并物理写入）
-    const invoke = getTauriInvoke();
-    if (typeof invoke === "function") {
-      try {
-        const savedPath = await invoke("save_mindmap_file", {
-          path: targetPath,
-          defaultName: targetFileName,
-          content: payload
-        });
-
-        if (savedPath === "CANCELLED") {
-          return false; // 用户主动点击取消
-        }
-
-        if (savedPath && typeof savedPath === "string") {
-          finalizeSaveSuccess(tab, savedPath, null);
-          return true;
-        }
-      } catch (rustErr) {
-        console.warn("Rust save failed, attempting web fallback:", rustErr);
-      }
-    }
-
-    // 🌐 级别 2：纯 Web 浏览器环境
-    if (typeof window.showSaveFilePicker === "function") {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: targetFileName,
-          types: [{ description: "思维导图文件 (*.ymind, *.mind, *.json)", accept: { "application/json": [".ymind", ".mind", ".json"] } }],
-          excludeAcceptAllOption: false
-        });
-        const writable = await handle.createWritable();
-        await writable.write(payload);
-        await writable.close();
-        finalizeSaveSuccess(tab, handle.name, handle);
-        return true;
-      } catch (err) {
-        if (err.name === "AbortError") return false;
-      }
-    }
-
-    // 📥 级别 3：通用下载兜底
-    try {
-      const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = targetFileName;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-      }, 1000);
-      finalizeSaveSuccess(tab, targetFileName, null);
-      return true;
-    } catch (e) {
-      appAlert({ title: "保存异常", message: String(e.message || e), type: "error" });
-      return false;
-    }
-  }
-
-  function finalizeSaveSuccess(tab, savedPathOrName, handle) {
-    if (handle) tab.fileHandle = handle;
-    if (savedPathOrName) {
-      tab.fileName = savedPathOrName.split(/[\\/\\]/).pop();
-      if (savedPathOrName.includes("/") || savedPathOrName.includes("\\")) {
-        tab.filePath = savedPathOrName;
-      }
-      const cleanName = tab.fileName.replace(/\.[^/.]+$/, "");
-      if (cleanName) tab.title = cleanName;
-    }
-    tab.isDirty = false;
-    createVersionSnapshot(tab, "manual");
-    recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, tab);
-    renderApp();
-    
-    const displayLabel = tab.fileName || tab.title || "思维导图.ymind";
-    showToast(`💾 导图已成功保存: ${displayLabel}`);
-  }
-
-  // 🌟 2. 核心打开引擎：优先通过 Rust 原生读取
-  async function openLocalFile() {
-    // 🦀 级别 1：调用 Rust 原生命令打开文件
-    const invoke = getTauriInvoke();
-    if (typeof invoke === "function") {
-      try {
-        const res = await invoke("open_mindmap_file");
-        if (res && Array.isArray(res) && res.length === 2) {
-          const [selectedPath, content] = res;
-          const rawName = selectedPath.split(/[\\/\\]/).pop();
-          const cleanName = rawName.replace(/\.[^/.]+$/, "");
-          await loadFileContent(content, cleanName, selectedPath, rawName, null);
-          return;
-        } else if (res === null) {
-          return; // 用户主动取消
-        }
-      } catch (rustErr) {
-        console.warn("Rust open failed, attempting web fallback:", rustErr);
-      }
-    }
-
-    // 🌐 级别 2：纯 Web 浏览器环境
-    if (typeof window.showOpenFilePicker === "function") {
-      try {
-        const [handle] = await window.showOpenFilePicker({
-          multiple: false,
-          types: [{
-            description: "所有思维导图文件 (*.mind, *.ymind, *.json, *.xmind)",
-            accept: {
-              "application/json": [".json", ".mind", ".ymind"],
-              "text/plain": [".json", ".mind", ".ymind", ".txt"],
-              "application/octet-stream": [".mind", ".ymind", ".xmind"]
-            }
-          }],
-          excludeAcceptAllOption: false
-        });
-        if (handle) {
-          const file = await handle.getFile();
-          const content = await file.text();
-          const cleanName = file.name.replace(/\.[^/.]+$/, "");
-          await loadFileContent(content, cleanName, null, file.name, handle);
-          return;
-        }
-      } catch (err) {
-        if (err.name === "AbortError") return;
-      }
-    }
-
-    // 📥 级别 3：HTML input 兜底
-    if (fileInput) {
-      fileInput.value = "";
-      fileInput.click();
-    }
-  }
-
-  // 🌟 3. 精准文件解析与防重复打开
-  async function loadFileContent(jsonText, defaultFileName = "本地思维导图", filePath = null, rawFileName = null, fileHandle = null) {
-    try {
-      const cleanText = jsonText.trim().replace(/^\uFEFF/, "");
-      let parsed = JSON.parse(cleanText);
-
-      if (isEncryptedPackage(parsed)) {
-        const pwd = await appPrompt({
-          title: "安全解密导图",
-          message: "此导图受 AES-256 高强度加密保护，请输入访问密码：",
-          inputType: "password",
-          placeholder: "请输入密码..."
-        });
-        if (!pwd) return false;
-        try {
-          parsed = await decryptMindPayload(parsed, pwd);
-        } catch {
-          await appAlert({ title: "解密失败", message: "密码错误或密文数据已被篡改，解密失败！", type: "error" });
-          return false;
-        }
-      }
-
-      const { fileDisplayName, loadedMindData, loadedLayout, loadedPalette, loadedLine, loadedBox, loadedTheme } = deserializePackage(parsed, defaultFileName, filePath);
-
-      if (!loadedMindData || typeof loadedMindData !== "object" || (!loadedMindData.id && !loadedMindData.text)) {
-        await appAlert({ title: "文件格式不兼容", message: "未识别到有效的思维导图结构化树状数据。", type: "warning" });
-        return false;
-      }
-
-      // 重复打开同一个文件时，精准聚焦至已打开的标签页
-      const existingTab = state.tabs.find(t => {
-        if (filePath && t.filePath && t.filePath === filePath) return true;
-        if (rawFileName && ((t.fileHandle && t.fileHandle.name === rawFileName) || t.fileName === rawFileName)) return true;
-        if (fileHandle && t.fileHandle && t.fileHandle.name === fileHandle.name) return true;
-        if (t.title === fileDisplayName && !t.filePath && !t.fileHandle) return true;
-        return false;
-      });
-
-      if (existingTab) {
-        state.activeTabId = existingTab.id;
-        if (fileHandle) existingTab.fileHandle = fileHandle;
-        if (filePath) existingTab.filePath = filePath;
-        if (rawFileName) existingTab.fileName = rawFileName;
-        camera.transform = existingTab.camera;
-        document.body.className = `theme-${existingTab.canvasTheme || "studio-light"}`;
-        window.__SHOW_WORKSPACE__ ? window.__SHOW_WORKSPACE__() : renderApp();
-        syncInspectorUi();
-        smartCenterOnSelectedNode(state, true);
-        showToast(`📑 已切换至已打开的导图: ${fileDisplayName}`);
-        return true;
-      }
-
-      // 如果当前仅有一个未编辑的空白初始标签，则直接在当前标签加载
-      const currentTab = getActiveTab();
-      const isCurrentBlank = state.tabs.length === 1 && 
-        !currentTab.isDirty && 
-        !currentTab.filePath && 
-        !currentTab.fileHandle && 
-        (!currentTab.history || currentTab.history.length <= 1);
-      
-      const targetTab = isCurrentBlank ? currentTab : createNewTab();
-
-      targetTab.title = fileDisplayName;
-      targetTab.fileName = rawFileName || (fileDisplayName + ".ymind");
-      targetTab.filePath = filePath;
-      targetTab.fileHandle = fileHandle || null;
-      targetTab.mindData = JSON.parse(JSON.stringify(loadedMindData));
-      targetTab.layoutStructure = loadedLayout;
-      targetTab.colorPalette = loadedPalette;
-      targetTab.lineStyle = loadedLine;
-      targetTab.boxStyle = loadedBox;
-      targetTab.canvasTheme = loadedTheme;
-      targetTab.selectedIds = new Set([targetTab.mindData.id || "root"]);
-      targetTab.focusedRootId = targetTab.mindData.id || "root";
-      targetTab.history = [JSON.stringify(targetTab.mindData)];
-      targetTab.historyIndex = 0;
-      targetTab.isDirty = false;
-      camera.transform = targetTab.camera;
-
-      document.body.className = `theme-${loadedTheme}`;
-      recordRecentDoc(fileDisplayName, targetTab.mindData, loadedLayout, filePath, targetTab);
-
-      window.__SHOW_WORKSPACE__ ? window.__SHOW_WORKSPACE__() : renderApp();
-      syncInspectorUi();
-      smartCenterOnSelectedNode(state, true);
-      showToast(`📂 已打开: ${fileDisplayName}`);
-      return true;
-    } catch (err) {
-      await appAlert({ title: "打开失败", message: "无法解析该思维导图文件：" + err.message, type: "error" });
-      return false;
-    }
-  }
-
-  if (fileInput) {
-    fileInput.onchange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const cleanName = file.name.replace(/\.[^/.]+$/, "");
-      await loadFileContent(await file.text(), cleanName, null, file.name, null);
-    };
-  }
-
-  function switchViewMode(mode) {
-    state.viewMode = mode;
-    renderApp();
-    if (mode === "mindmap") smartCenterOnSelectedNode(state, true);
-  }
-
-  function batchSetPriority(priorityVal) {
-    if (state.selectedIds.size === 0) return;
-    state.selectedIds.forEach(id => {
-      const node = findNode(id, state.mindData);
-      if (node) node.priority = priorityVal === "none" ? null : priorityVal;
-    });
+    if (tab) tab.isDirty = true;
     saveSnapshot();
     renderApp();
-  }
-
-  function batchSetProgress(progressVal) {
-    if (state.selectedIds.size === 0) return;
-    state.selectedIds.forEach(id => {
-      const node = findNode(id, state.mindData);
-      if (node) node.progress = progressVal === "none" ? null : progressVal;
-    });
-    saveSnapshot();
-    renderApp();
-  }
-
-  function openTagManagerModal() {
-    if (state.selectedIds.size === 0 || !modalOverlay) return;
-
-    function renderModalTags() {
-      if (!modalTagsList) return;
-      modalTagsList.innerHTML = "";
-      const primary = getPrimarySelectedNode();
-      const tags = primary?.tags || [];
-
-      if (tags.length === 0) {
-        modalTagsList.innerHTML = "<span class=\"modal-tag-empty\">暂无标签</span>";
-        return;
-      }
-
-      tags.forEach(tag => {
-        const pill = document.createElement("span");
-        pill.className = "modal-tag-pill";
-        pill.innerHTML = `<span>${tag}</span><span class="modal-tag-remove" title="删除">×</span>`;
-        pill.querySelector(".modal-tag-remove").onclick = (e) => {
-          e.stopPropagation();
-          state.selectedIds.forEach(id => {
-            const n = findNode(id, state.mindData);
-            if (n?.tags) n.tags = n.tags.filter(t => t !== tag);
-          });
-          saveSnapshot();
-          renderApp();
-          renderModalTags();
-        };
-        modalTagsList.appendChild(pill);
-      });
-    }
-
-    function closeModal() {
-      modalOverlay.classList.add("hidden");
-      if (modalInput) modalInput.value = "";
-    }
-
-    function addTagAndClose() {
-      const val = modalInput?.value.trim();
-      if (val) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) {
-            if (!n.tags) n.tags = [];
-            if (!n.tags.includes(val)) n.tags.push(val);
-          }
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      closeModal();
-    }
-
-    renderModalTags();
-    modalOverlay.classList.remove("hidden");
-    modalInput?.focus();
-
-    bindClick("modal-btn-cancel", closeModal);
-    bindClick("modal-btn-confirm", addTagAndClose);
-
-    if (modalInput) {
-      modalInput.onkeydown = (e) => {
-        if (e.key === "Enter") { e.preventDefault(); addTagAndClose(); }
-        else if (e.key === "Escape") closeModal();
-      };
-    }
-  }
-
-  function batchDelete() {
-    if (state.selectedIds.size === 0) return;
-    let changed = false;
-    let fallbackId = state.focusedRootId;
-
-    state.selectedIds.forEach(id => {
-      if (id === state.focusedRootId) return;
-      const parent = findParent(id, state.mindData);
-      if (parent) {
-        parent.children = parent.children.filter(c => c.id !== id);
-        fallbackId = parent.id;
-        changed = true;
-      }
-    });
-
-    if (changed) {
-      if (!findNode(state.focusedRootId, state.mindData)) state.focusedRootId = state.mindData?.id || "root";
-      state.selectedIds = new Set([fallbackId]);
-      saveSnapshot();
-      renderApp();
-    }
   }
 
   function addChildNode() {
-    const primary = getPrimarySelectedNode();
-    if (!primary) return;
-    if (primary.collapsed) primary.collapsed = false;
-
-    const newChild = { id: "node_" + Date.now(), text: "新分支主题", collapsed: false, children: [] };
-    if (!primary.children) primary.children = [];
-    primary.children.push(newChild);
-    state.selectedIds = new Set([newChild.id]);
-    saveSnapshot();
-    renderApp();
-
-    const target = findNode(newChild.id, state.mindData);
-    if (target) startEditNode(target, state, renderApp);
+    const p = getPrimarySelectedNode(); if (!p) return;
+    const child = { id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4), text: "新分支", collapsed: false, children: [] };
+    if (!p.children) p.children = [];
+    p.children.push(child); p.collapsed = false;
+    state.selectedIds = new Set([child.id]);
+    markDirtyAndRefresh();
+    locateFocusedNode(child.id, true);
   }
 
   function addSiblingNode() {
-    const primary = getPrimarySelectedNode();
-    if (!primary || primary.id === state.focusedRootId) {
-      addChildNode();
+    const p = getPrimarySelectedNode();
+    if (!p || p.id === state.focusedRootId) return addChildNode();
+    const parent = findParent(p.id, state.mindData); if (!parent) return;
+    const sib = { id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4), text: "新主题", collapsed: false, children: [] };
+    const idx = parent.children.findIndex(c => c.id === p.id);
+    parent.children.splice(idx + 1, 0, sib);
+    state.selectedIds = new Set([sib.id]);
+    markDirtyAndRefresh();
+    locateFocusedNode(sib.id, true);
+  }
+
+  function deleteSelectedNodes() {
+    if (!state.selectedIds || state.selectedIds.size === 0) return;
+    let fallbackId = state.focusedRootId;
+    state.selectedIds.forEach(id => {
+      if (id === state.focusedRootId) return;
+      const parent = findParent(id, state.mindData);
+      if (parent) { parent.children = parent.children.filter(c => c.id !== id); fallbackId = parent.id; }
+    });
+    state.selectedIds = new Set([fallbackId]);
+    markDirtyAndRefresh();
+  }
+
+  document.getElementById("btn-add-child")?.addEventListener("click", addChildNode);
+  document.getElementById("btn-add-sibling")?.addEventListener("click", addSiblingNode);
+  document.getElementById("btn-delete")?.addEventListener("click", deleteSelectedNodes);
+  document.getElementById("btn-undo")?.addEventListener("click", () => undo(renderApp));
+  document.getElementById("btn-redo")?.addEventListener("click", () => redo(renderApp));
+  document.getElementById("btn-node-note")?.addEventListener("click", () => openNotesDrawer());
+
+  document.getElementById("btn-toggle-format")?.addEventListener("click", () => {
+    const fs = document.getElementById("format-sidebar");
+    fs?.classList.toggle("collapsed");
+    document.getElementById("btn-toggle-format")?.classList.toggle("active", !fs?.classList.contains("collapsed"));
+  });
+  document.getElementById("btn-close-format")?.addEventListener("click", () => {
+    document.getElementById("format-sidebar")?.classList.add("collapsed");
+    document.getElementById("btn-toggle-format")?.classList.remove("active");
+  });
+
+  document.querySelectorAll("#menu-structures .struct-card").forEach(c => {
+    c.onclick = () => {
+      const t = getActiveTab();
+      if (t) { t.layoutStructure = c.dataset.structure; markDirtyAndRefresh(); syncInspectorUi(); }
+    };
+  });
+  document.querySelectorAll("#palette-options-grid .palette-chip").forEach(c => {
+    c.onclick = () => {
+      const t = getActiveTab();
+      if (t) { t.colorPalette = c.dataset.palette; markDirtyAndRefresh(); syncInspectorUi(); }
+    };
+  });
+  document.querySelectorAll("#line-style-options .style-btn").forEach(b => {
+    b.onclick = () => {
+      const t = getActiveTab();
+      if (t) { t.lineStyle = b.dataset.line; markDirtyAndRefresh(); syncInspectorUi(); }
+    };
+  });
+  document.querySelectorAll("#box-style-options .style-btn").forEach(b => {
+    b.onclick = () => {
+      const t = getActiveTab();
+      if (t) { t.boxStyle = b.dataset.box; markDirtyAndRefresh(); syncInspectorUi(); }
+    };
+  });
+  document.querySelectorAll("#menu-bg-colors .bg-color-swatch").forEach(c => {
+    c.onclick = () => {
+      const t = getActiveTab();
+      if (t) { t.canvasBgColor = c.dataset.color; markDirtyAndRefresh(); applyCanvasThemeToBody(t.canvasBgColor, t.canvasBgPattern); syncInspectorUi(); }
+    };
+  });
+  document.querySelectorAll("#menu-bg-patterns .bg-pattern-card").forEach(b => {
+    b.onclick = () => {
+      const t = getActiveTab();
+      if (t) { t.canvasBgPattern = b.dataset.pattern; markDirtyAndRefresh(); applyCanvasThemeToBody(t.canvasBgColor, t.canvasBgPattern); syncInspectorUi(); }
+    };
+  });
+
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => { camera.transform.scale = Math.min(3.0, camera.transform.scale * 1.2); requestTransformUpdate(); });
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => { camera.transform.scale = Math.max(0.2, camera.transform.scale / 1.2); requestTransformUpdate(); });
+  document.getElementById("txt-zoom-level")?.addEventListener("click", () => { camera.transform.scale = 1.0; requestTransformUpdate(); });
+  document.getElementById("btn-smart-center")?.addEventListener("click", () => smartCenterOnSelectedNode(state, true));
+
+  async function performSave() {
+    let tab = getActiveTab();
+    if (!tab || !tab.isDirty) return;
+
+    const pkg = await serializeTabToPackage(tab);
+    const contentStr = JSON.stringify(pkg.filePackage, null, 2);
+
+    const savedPath = await callTauri("save_mindmap_file", {
+      path: tab.filePath || null,
+      defaultName: pkg.filenameWithExt,
+      content: contentStr
+    });
+
+    if (savedPath) {
+      if (savedPath === "CANCELLED") return;
+      tab.filePath = savedPath;
+      tab.title = savedPath.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "");
+    }
+
+    tab.isDirty = false;
+    recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, {
+      colorPalette: tab.colorPalette,
+      lineStyle: tab.lineStyle,
+      boxStyle: tab.boxStyle,
+      canvasBgColor: tab.canvasBgColor,
+      canvasBgPattern: tab.canvasBgPattern
+    }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault);
+    renderApp();
+    const displayFileName = tab.filePath ? tab.filePath.split(/[\\/]/).pop() : (pkg.presetFilename + ".ymind");
+    showToast(tab.isEncrypted ? `🛡️ 「${displayFileName}」已安全加密保存` : `💾 「${displayFileName}」保存成功`);
+  }
+
+  async function triggerOpenFile() {
+    const tauriResult = await callTauri("open_mindmap_file", {});
+    if (tauriResult) {
+      const [filePath, contentStr] = tauriResult;
+      let parsed = null;
+      try { parsed = JSON.parse(contentStr); }
+      catch { parsed = { title: filePath.split(/[\\/]/).pop().replace(/\.[^/.]+$/, ""), mindData: parseTextToTree(contentStr) }; }
+
+      let tab = getActiveTab() || createNewTab();
+      const res = deserializePackage(parsed, "本地白板", filePath);
+      
+      tab.filePath = filePath;
+      tab.title = res.fileDisplayName;
+      tab.layoutStructure = res.loadedLayout;
+      tab.colorPalette = res.loadedPalette;
+      tab.lineStyle = res.loadedLine;
+      tab.boxStyle = res.loadedBox;
+      tab.canvasBgColor = res.loadedBgColor;
+      tab.canvasBgPattern = res.loadedBgPattern;
+      tab.isDirty = false;
+
+      if (res.isEncrypted) {
+        tab.isEncrypted = true;
+        tab.encryptedVault = res.encryptedVault;
+        tab.mindData = { id: "root", text: "🔒 " + tab.title, children: [] };
+        tab._isLocked = true;
+        showLockScreen(tab);
+        showToast("🔒 此文件已受加密保护，请输入密码解锁");
+      } else {
+        tab.isEncrypted = false;
+        tab.encryptedVault = null;
+        tab.mindData = res.loadedMindData;
+        tab.selectedIds = new Set([tab.mindData.id || "root"]);
+        tab.focusedRootId = tab.mindData.id || "root";
+        showToast(`📂 已打开: ${tab.title}`);
+      }
+
+      applyCanvasThemeToBody(tab.canvasBgColor, tab.canvasBgPattern);
+      syncInspectorUi();
+      updateSecurityDockStatus();
+
+      if (window.__SHOW_WORKSPACE__) window.__SHOW_WORKSPACE__();
+      else renderApp();
+    }
+  }
+
+  document.getElementById("btn-save")?.addEventListener("click", performSave);
+  document.getElementById("btn-open")?.addEventListener("click", triggerOpenFile);
+  document.getElementById("nav-btn-open-file")?.addEventListener("click", triggerOpenFile);
+
+  window.addEventListener("keydown", async (e) => {
+    if (e.target.closest("input, textarea, select, [contenteditable=true]") || e.target.isContentEditable || state.editingNodeId) return;
+
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      e.preventDefault();
+      handleArrowNavigation(e.key, renderApp);
       return;
     }
-    const parent = findParent(primary.id, state.mindData);
-    if (!parent) return;
-    const newSibling = { id: "node_" + Date.now(), text: "同级分支", collapsed: false, children: [] };
-    const index = parent.children.findIndex(c => c.id === primary.id);
-    parent.children.splice(index + 1, 0, newSibling);
-    state.selectedIds = new Set([newSibling.id]);
-    saveSnapshot();
-    renderApp();
 
-    const target = findNode(newSibling.id, state.mindData);
-    if (target) startEditNode(target, state, renderApp);
-  }
-
-  document.getElementById("menu-structures")?.addEventListener("click", (e) => {
-    const card = e.target.closest(".struct-card");
-    if (!card) return;
-    state.layoutStructure = card.dataset.structure;
-    saveSnapshot();
-    renderApp();
-    syncInspectorUi();
-    smartCenterOnSelectedNode(state, true);
-  });
-
-  document.getElementById("palette-options-grid")?.addEventListener("click", (e) => {
-    const chip = e.target.closest(".palette-chip");
-    if (!chip) return;
-    state.colorPalette = chip.dataset.palette;
-    saveSnapshot();
-    renderApp();
-    syncInspectorUi();
-  });
-
-  document.getElementById("line-style-options")?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".style-btn");
-    if (!btn) return;
-    state.lineStyle = btn.dataset.line;
-    saveSnapshot();
-    renderApp();
-    syncInspectorUi();
-  });
-
-  document.getElementById("box-style-options")?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".style-btn");
-    if (!btn) return;
-    state.boxStyle = btn.dataset.box;
-    saveSnapshot();
-    renderApp();
-    syncInspectorUi();
-  });
-
-  document.getElementById("menu-themes")?.addEventListener("click", (e) => {
-    const card = e.target.closest(".theme-card");
-    if (!card) return;
-    const theme = card.dataset.theme;
-    const tab = getActiveTab();
-    if (tab) tab.canvasTheme = theme;
-    document.body.className = `theme-${theme}`;
-    saveSnapshot();
-    renderApp();
-    syncInspectorUi();
-    requestTransformUpdate();
-  });
-
-  document.getElementById("menu-priority")?.addEventListener("click", (e) => {
-    const item = e.target.closest(".popover-item");
-    if (!item) return;
-    batchSetPriority(item.dataset.priority);
-    item.closest(".dropdown-wrapper")?.classList.remove("active");
-  });
-
-  document.getElementById("menu-progress")?.addEventListener("click", (e) => {
-    const item = e.target.closest(".popover-item");
-    if (!item) return;
-    batchSetProgress(item.dataset.progress);
-    item.closest(".dropdown-wrapper")?.classList.remove("active");
-  });
-
-  function toggleDropdown(wrapper) {
-    if (!wrapper) return;
-    const isAlreadyOpen = wrapper.classList.contains("active");
-    document.querySelectorAll(".dropdown-wrapper").forEach(w => w.classList.remove("active"));
-    if (!isAlreadyOpen) wrapper.classList.add("active");
-  }
-
-  window.addEventListener("pointerdown", (e) => {
-    if (!e.target.closest(".dropdown-wrapper")) {
-      document.querySelectorAll(".dropdown-wrapper.active").forEach(w => w.classList.remove("active"));
-    }
-  }, true);
-
-  bindClick("btn-zoom-in", () => {
-    stopAllCameraAnimations();
-    camera.transform.scale = Math.min(3.5, camera.transform.scale * 1.25);
-    requestTransformUpdate();
-    const zt = document.getElementById("txt-zoom-level");
-    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
-  });
-
-  bindClick("btn-zoom-out", () => {
-    stopAllCameraAnimations();
-    camera.transform.scale = Math.max(0.15, camera.transform.scale / 1.25);
-    requestTransformUpdate();
-    const zt = document.getElementById("txt-zoom-level");
-    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
-  });
-
-  bindClick("txt-zoom-level", () => {
-    stopAllCameraAnimations();
-    camera.transform.scale = 1.0;
-    requestTransformUpdate();
-    const zt = document.getElementById("txt-zoom-level");
-    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
-    smartCenterOnSelectedNode(state, true);
-  });
-
-  bindClick("btn-smart-center", () => smartCenterOnSelectedNode(state, true));
-  bindClick("btn-toggle-minimap", () => minimapWidget?.classList.toggle("hidden"));
-
-  // 绑定保存与打开事件
-  bindClick("btn-save", () => saveMindMapFile(false));
-  bindClick("btn-open", openLocalFile);
-  bindClick("nav-btn-open-file", openLocalFile);
-
-  window.addEventListener("keydown", (e) => {
-    if (e.target && (e.target.matches?.("input, textarea, select, [contenteditable=true]") || e.target.isContentEditable) && e.target.id !== "inline-editor") return;
-    if (e.key === "Escape") {
-      const activeDropdown = document.querySelector(".dropdown-wrapper.active");
-      if (activeDropdown) {
-        activeDropdown.classList.remove("active");
-        return;
+    const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+    const cmd = isMac ? e.metaKey : e.ctrlKey;
+    if (cmd && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redo(renderApp); else undo(renderApp); }
+    else if (cmd && e.key.toLowerCase() === "y") { e.preventDefault(); redo(renderApp); }
+    else if (cmd && e.key.toLowerCase() === "s") { e.preventDefault(); performSave(); }
+    else if (cmd && e.key.toLowerCase() === "o") { e.preventDefault(); triggerOpenFile(); }
+    // 🌟 快捷键 ⌘W / Ctrl+W 关闭标签，触发未保存确认
+    else if (cmd && e.key.toLowerCase() === "w") {
+      e.preventDefault();
+      const curTab = getActiveTab();
+      if (curTab) {
+        await closeTabWithConfirm(curTab.id, renderApp, window.__SHOW_HOME__ || (() => {}));
       }
     }
-
-    if (state.editingNodeId) return;
-
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveMindMapFile(true); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveMindMapFile(false); return; }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "h") { e.preventDefault(); openVersionHistoryModal(renderApp); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); openLocalFile(); return; }
-    if (e.altKey && e.key === "1") { e.preventDefault(); switchViewMode("mindmap"); return; }
-    if (e.altKey && e.key === "2") { e.preventDefault(); switchViewMode("outliner"); return; }
-    if (e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); switchViewMode(state.viewMode === "mindmap" ? "outliner" : "mindmap"); return; }
-
-    if (state.viewMode === "outliner") return;
-
-    if (e.altKey && e.key.toLowerCase() === "n") { e.preventDefault(); openNotesDrawer(getPrimarySelectedNode()); return; }
-    if (e.altKey && e.key.toLowerCase() === "f") { e.preventDefault(); openFlashcardModal(); return; }
-    if (e.altKey && e.key.toLowerCase() === "l") { e.preventDefault(); document.getElementById("btn-toggle-security")?.click(); return; }
-    if (e.altKey && e.key.toLowerCase() === "r") { e.preventDefault(); toggleRecallMode(renderApp); return; }
-    if (e.key === "Tab") { e.preventDefault(); addChildNode(); }
+    else if (e.altKey && e.key.toLowerCase() === "l") {
+      e.preventDefault();
+      const tab = getActiveTab();
+      if (tab?.isEncrypted) lockCurrentTab();
+      else openVaultSetModal();
+    }
+    else if (e.key === "Tab") { e.preventDefault(); addChildNode(); }
     else if (e.key === "Enter") { e.preventDefault(); addSiblingNode(); }
-    else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); batchDelete(); }
-    else if (["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); batchSetPriority("P" + e.key); }
-    else if (e.key === "0") { e.preventDefault(); batchSetPriority("none"); }
-    else if (e.altKey && (e.key.toLowerCase() === "c" || e.key === "ç")) { e.preventDefault(); smartCenterOnSelectedNode(state); }
-    else if (e.key === "Escape") {
-      closeVersionHistoryModal();
-      const rootId = state.mindData?.id || "root"; 
-      if (state.focusedRootId !== rootId) { 
-        state.focusedRootId = rootId; 
-        renderApp(); 
-        smartCenterOnSelectedNode(state); 
-      }
-    } else if (e.key === " " || e.key === "F2") {
-      e.preventDefault();
-      const primary = getPrimarySelectedNode();
-      if (primary) startEditNode(primary, state, renderApp);
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-      e.preventDefault();
-      e.shiftKey ? redo(renderApp) : undo(renderApp);
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-      e.preventDefault(); 
-      redo(renderApp);
-    }
+    else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelectedNodes(); }
   });
 
-  if (viewport) {
-    viewport.addEventListener("mousedown", (e) => {
-      stopAllCameraAnimations();
-
-      if (state.editingNodeId) {
-        const editor = document.getElementById("inline-editor");
-        if (editor && !editor.classList.contains("hidden")) {
-          editor.blur();
-        }
-        return;
-      }
-      
-      const isNode = e.target.closest && (e.target.closest(".svg-node") || e.target.closest(".svg-badge"));
-      const isInteractiveUi = e.target.closest && (
-        e.target.closest(".canvas-floating-controls") ||
-        e.target.closest(".minimap-widget") ||
-        e.target.closest(".inline-editor") ||
-        e.target.closest(".apple-breadcrumb-capsule")
-      );
-
-      document.querySelectorAll(".dropdown-wrapper").forEach(w => w.classList.remove("active"));
-      if (isNode || isInteractiveUi) return;
-
-      e.preventDefault();
-      lastMousePos = { x: e.clientX, y: e.clientY };
-      lastMouseTime = performance.now();
-      velocity = { x: 0, y: 0 };
-
-      if ((e.shiftKey || e.metaKey || e.ctrlKey) && marqueeBox) {
-        isMarqueeActive = true;
-        const rect = viewport.getBoundingClientRect();
-        marqueeStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        marqueeBox.style.left = `${marqueeStart.x}px`;
-        marqueeBox.style.top = `${marqueeStart.y}px`;
-        marqueeBox.style.width = "0px";
-        marqueeBox.style.height = "0px";
-        marqueeBox.classList.remove("hidden");
-      } else {
-        isDraggingCanvas = true;
-        document.body.classList.add("is-panning");
-        startPan = { x: e.clientX - camera.transform.x, y: e.clientY - camera.transform.y };
-        dragStartPos = { x: e.clientX, y: e.clientY };
-      }
+  // 标签管理模态框
+  const tagModal = document.getElementById("apple-modal-overlay");
+  const tagInput = document.getElementById("modal-input");
+  const tagsListDom = document.getElementById("modal-tags-list");
+  
+  function renderTagsList(node) {
+    if (!tagsListDom || !node) return;
+    tagsListDom.innerHTML = (node.tags || []).map((t, idx) => `
+      <span class="apple-tag p3" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;margin:2px;cursor:pointer;" data-idx="${idx}">
+        ${t} <span style="font-weight:bold;">×</span>
+      </span>
+    `).join("");
+    tagsListDom.querySelectorAll("span.apple-tag").forEach(el => {
+      el.onclick = () => {
+        const idx = parseInt(el.dataset.idx, 10);
+        node.tags.splice(idx, 1);
+        renderTagsList(node);
+        markDirtyAndRefresh();
+      };
     });
-
-    window.addEventListener("mousemove", (e) => {
-      if (state.editingNodeId) return;
-      if (!isMarqueeActive && !isDraggingCanvas) return;
-
-      const now = performance.now();
-      const dt = now - lastMouseTime;
-      if (dt > 8) {
-        const rawVx = (e.clientX - lastMousePos.x) / dt;
-        const rawVy = (e.clientY - lastMousePos.y) / dt;
-        velocity.x = velocity.x * 0.35 + rawVx * 0.65;
-        velocity.y = velocity.y * 0.35 + rawVy * 0.65;
-        lastMousePos = { x: e.clientX, y: e.clientY };
-        lastMouseTime = now;
-      }
-
-      if (isMarqueeActive && marqueeBox) {
-        const rect = viewport.getBoundingClientRect();
-        const curX = e.clientX - rect.left;
-        const curY = e.clientY - rect.top;
-        const left = Math.min(marqueeStart.x, curX);
-        const top = Math.min(marqueeStart.y, curY);
-        const width = Math.abs(curX - marqueeStart.x);
-        const height = Math.abs(curY - marqueeStart.y);
-
-        marqueeBox.style.left = `${left}px`;
-        marqueeBox.style.top = `${top}px`;
-        marqueeBox.style.width = `${width}px`;
-        marqueeBox.style.height = `${height}px`;
-
-        const worldL = (left - camera.transform.x) / camera.transform.scale;
-        const worldR = (left + width - camera.transform.x) / camera.transform.scale;
-        const worldT = (top - camera.transform.y) / camera.transform.scale;
-        const worldB = (top + height - camera.transform.y) / camera.transform.scale;
-
-        const currentRoot = findNode(state.focusedRootId, state.mindData) || state.mindData;
-        const selected = new Set();
-
-        function checkCollision(n) {
-          if (n.x !== undefined && n.y !== undefined && n.width !== undefined && n.height !== undefined) {
-            const nodeL = n.x;
-            const nodeR = n.x + n.width;
-            const nodeT = n.y;
-            const nodeB = n.y + n.height;
-            const intersects = !(nodeL > worldR || nodeR < worldL || nodeT > worldB || nodeB < worldT);
-            if (intersects) selected.add(n.id);
-          }
-          if (n.children && !n.collapsed) n.children.forEach(checkCollision);
-        }
-        checkCollision(currentRoot);
-
-        state.selectedIds = selected.size > 0 ? selected : new Set([state.focusedRootId]);
-        updateSelectionStyles(state);
-      } else if (isDraggingCanvas) {
-        camera.transform.x = e.clientX - startPan.x;
-        camera.transform.y = e.clientY - startPan.y;
-        requestTransformUpdate();
-      }
-    });
-
-    window.addEventListener("mouseup", (e) => {
-      if (isMarqueeActive && marqueeBox) {
-        isMarqueeActive = false;
-        marqueeBox.classList.add("hidden");
-      }
-      if (isDraggingCanvas) {
-        isDraggingCanvas = false;
-        document.body.classList.remove("is-panning");
-        if (Math.hypot(e.clientX - dragStartPos.x, e.clientY - dragStartPos.y) < 4) {
-          state.selectedIds = new Set([state.focusedRootId]);
-          updateSelectionStyles(state);
-        }
-
-        const timeSinceLastMove = performance.now() - lastMouseTime;
-        if (timeSinceLastMove < 45) {
-          const speed = Math.hypot(velocity.x, velocity.y);
-          if (speed > 0.25) {
-            const maxSpeed = 1.4;
-            const scale = speed > maxSpeed ? maxSpeed / speed : 1;
-            startInertiaMomentum(velocity.x * scale * 0.42, velocity.y * scale * 0.42);
-          }
-        }
-      }
-    });
-
-    viewport.addEventListener("wheel", (e) => {
-      if (state.editingNodeId) {
-        const ed = document.getElementById("inline-editor");
-        if (ed && !ed.classList.contains("hidden")) ed.blur();
-        return;
-      }
-      stopAllCameraAnimations();
-      e.preventDefault();
-      if (e.ctrlKey || e.metaKey || (Math.abs(e.deltaX) > 0 && !e.shiftKey)) {
-        if (e.ctrlKey || e.metaKey) {
-          const rect = viewport.getBoundingClientRect();
-          const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-          const prev = camera.transform.scale;
-          const factor = Math.exp(-e.deltaY * 0.006);
-          const ns = Math.min(Math.max(0.15, prev * factor), 3.5);
-          camera.transform.x = mx - (mx - camera.transform.x) * (ns / prev);
-          camera.transform.y = my - (my - camera.transform.y) * (ns / prev);
-          camera.transform.scale = ns;
-        } else {
-          camera.transform.x -= e.deltaX;
-          camera.transform.y -= e.deltaY;
-        }
-      } else {
-        const rect = viewport.getBoundingClientRect();
-        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-        const prev = camera.transform.scale;
-        const delta = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 40);
-        const factor = Math.exp(-delta * 0.0035);
-        const ns = Math.min(Math.max(0.15, prev * factor), 3.5);
-        camera.transform.x = mx - (mx - camera.transform.x) * (ns / prev);
-        camera.transform.y = my - (my - camera.transform.y) * (ns / prev);
-        camera.transform.scale = ns;
-      }
-      requestTransformUpdate();
-      const zt = document.getElementById("txt-zoom-level");
-      if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
-    }, { passive: false });
   }
 
-  bindClick("btn-mode-mindmap", () => switchViewMode("mindmap"));
-  bindClick("btn-mode-outliner", () => switchViewMode("outliner"));
-  bindClick("btn-mode-flashcards", openFlashcardModal);
-  bindClick("btn-node-attributes", (e) => { e.stopPropagation(); toggleDropdown(e.currentTarget.closest(".dropdown-wrapper")); });
-  bindClick("btn-open-full-icons", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    document.getElementById("btn-toggle-format")?.click();
-    document.getElementById("inspector-icon-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
-  bindClick("btn-open-tag-modal", () => {
-    document.querySelector(".dropdown-wrapper.active")?.classList.remove("active");
-    openTagManagerModal();
+  document.getElementById("btn-open-tag-modal")?.addEventListener("click", () => {
+    const p = getPrimarySelectedNode();
+    if (!p || !tagModal) return;
+    renderTagsList(p);
+    tagModal.classList.remove("hidden");
+    if (tagInput) { tagInput.value = ""; tagInput.focus(); }
   });
 
-  document.querySelectorAll(".attr-icon-chip[data-quick-icon]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const ic = chip.dataset.quickIcon;
-      if (state.selectedIds) {
-        state.selectedIds.forEach(id => {
-          const n = findNode(id, state.mindData);
-          if (n) n.icon = (n.icon === ic ? null : ic);
-        });
-        saveSnapshot();
-        renderApp();
-      }
-      chip.closest(".dropdown-wrapper")?.classList.remove("active");
-    });
-  });
+  function addTagFromInput() {
+    const p = getPrimarySelectedNode();
+    const val = tagInput?.value.trim();
+    if (p && val) {
+      if (!p.tags) p.tags = [];
+      if (!p.tags.includes(val)) p.tags.push(val);
+      if (tagInput) tagInput.value = "";
+      renderTagsList(p);
+      markDirtyAndRefresh();
+    }
+  }
 
-  bindClick("btn-add-child", addChildNode);
-  bindClick("btn-add-sibling", addSiblingNode);
-  bindClick("btn-delete", batchDelete);
-  bindClick("btn-undo", () => undo(renderApp));
-  bindClick("btn-redo", () => redo(renderApp));
-  bindClick("btn-add-tag", openTagManagerModal);
-  bindClick("btn-node-note", () => openNotesDrawer(getPrimarySelectedNode()));
-  bindClick("btn-active-recall", () => toggleRecallMode(renderApp));
-  bindClick("btn-flashcards", openFlashcardModal);
-  bindClick("btn-exit-focus", () => { 
-    state.focusedRootId = state.mindData?.id || "root"; 
-    renderApp(); 
-    smartCenterOnSelectedNode(state); 
+  document.getElementById("modal-btn-confirm")?.addEventListener("click", addTagFromInput);
+  tagInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addTagFromInput(); }
+    else if (e.key === "Escape") { tagModal?.classList.add("hidden"); }
   });
+  document.getElementById("modal-btn-cancel")?.addEventListener("click", () => tagModal?.classList.add("hidden"));
 }

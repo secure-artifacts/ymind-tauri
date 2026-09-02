@@ -1,10 +1,24 @@
-import { state, getActiveTab, createNewTab, saveSnapshot } from '../core/state.js';
+import { state, getActiveTab, createNewTab, getGlobalSettings, countNodes } from '../core/state.js';
 import { appAlert, appConfirm, showToast } from '../ui/dialog.js';
 import { syncInspectorUi } from '../ui/inspector.js';
 import { serializeTabToPackage } from '../core/serializer.js';
+import { showLockScreen, updateSecurityDockStatus } from '../ui/vault.js';
 
 const SNAPSHOTS_POOL_KEY = "YMIND_PRO_SNAPSHOTS_POOL";
-const MAX_SNAPSHOTS = 30;
+const MAX_SNAPSHOTS = 18;
+
+// 计算快照池实际占用的字节数
+export function getSnapshotsStorageSize() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOTS_POOL_KEY) || "";
+    const bytes = new Blob([raw]).size;
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  } catch {
+    return "未知";
+  }
+}
 
 export function getAllSnapshots() {
   try {
@@ -20,18 +34,23 @@ function saveSnapshotsPool(list) {
   try {
     localStorage.setItem(SNAPSHOTS_POOL_KEY, JSON.stringify(list));
   } catch (e) {
-    console.warn("写入快照池失败", e);
+    try {
+      const trimmed = list.slice(0, 6);
+      localStorage.setItem(SNAPSHOTS_POOL_KEY, JSON.stringify(trimmed));
+    } catch (err) {}
   }
 }
 
 export function createVersionSnapshot(tab = getActiveTab(), trigger = 'auto') {
-  if (!tab || !tab.mindData) return null;
+  // 🛡️ 核心防线：锁定状态文档或加密文档在自动模式下一律不静默存快照
+  if (!tab || tab._isLocked || !tab.mindData) return null;
+  if (tab.isEncrypted && trigger === 'auto') return null;
 
   const snapshots = getAllSnapshots();
   const currentDataString = JSON.stringify(tab.mindData);
 
   const lastSnap = snapshots.find(s => s.tabTitle === tab.title);
-  if (lastSnap && JSON.stringify(lastSnap.mindData) === currentDataString && trigger === 'auto') {
+  if (lastSnap && !tab.isEncrypted && JSON.stringify(lastSnap.mindData) === currentDataString && trigger === 'auto') {
     return null;
   }
 
@@ -43,11 +62,16 @@ export function createVersionSnapshot(tab = getActiveTab(), trigger = 'auto') {
     lineStyle: tab.lineStyle || "curve",
     boxStyle: tab.boxStyle || "squircle",
     canvasTheme: tab.canvasTheme || "studio-light",
-    isEncrypted: !!tab.isEncrypted,
+    canvasBgColor: tab.canvasBgColor || "studio-white",
+    canvasBgPattern: tab.canvasBgPattern || "dots",
+    isEncrypted: Boolean(tab.isEncrypted),
+    passwordHint: tab.passwordHint || "",
+    encryptedVault: tab.isEncrypted ? tab.encryptedVault : null,
     nodeCount: countNodes(tab.mindData),
     timestamp: Date.now(),
     trigger: trigger,
-    mindData: JSON.parse(currentDataString)
+    // 加密状态下绝不存明文
+    mindData: tab.isEncrypted ? null : JSON.parse(currentDataString)
   };
 
   snapshots.unshift(newSnapshot);
@@ -91,32 +115,51 @@ export function restoreSnapshot(snapId, mode = 'new_tab', renderCallback) {
   targetTab.lineStyle = snap.lineStyle || "curve";
   targetTab.boxStyle = snap.boxStyle || "squircle";
   targetTab.canvasTheme = snap.canvasTheme || "studio-light";
-  targetTab.mindData = JSON.parse(JSON.stringify(snap.mindData));
-  targetTab.selectedIds = new Set([targetTab.mindData.id || "root"]);
-  targetTab.focusedRootId = targetTab.mindData.id || "root";
-  targetTab.history = [JSON.stringify(targetTab.mindData)];
-  targetTab.historyIndex = 0;
+  targetTab.canvasBgColor = snap.canvasBgColor || "studio-white";
+  targetTab.canvasBgPattern = snap.canvasBgPattern || "dots";
   targetTab.isDirty = false;
+
+  if (snap.isEncrypted) {
+    targetTab.isEncrypted = true;
+    targetTab.encryptedVault = snap.encryptedVault;
+    targetTab.passwordHint = snap.passwordHint || "";
+    targetTab.mindData = { id: "root", text: "🔒 " + snap.tabTitle, children: [] };
+    targetTab.history = [];
+    targetTab._isLocked = true;
+    showLockScreen(targetTab);
+  } else {
+    targetTab.isEncrypted = false;
+    targetTab.encryptedVault = null;
+    targetTab.mindData = JSON.parse(JSON.stringify(snap.mindData));
+    targetTab.selectedIds = new Set([targetTab.mindData.id || "root"]);
+    targetTab.focusedRootId = targetTab.mindData.id || "root";
+    targetTab.history = [JSON.stringify(targetTab.mindData)];
+    targetTab.historyIndex = 0;
+  }
 
   document.body.className = `theme-${targetTab.canvasTheme}`;
 
   if (typeof renderCallback === 'function') {
     renderCallback();
     syncInspectorUi();
+    updateSecurityDockStatus();
   }
 }
 
-export function exportSnapshotToFile(snapId) {
+export async function exportSnapshotToFile(snapId) {
   const snap = getAllSnapshots().find(s => s.id === snapId);
   if (!snap) return;
 
-  const { filePackage } = serializeTabToPackage({
+  const { filePackage } = await serializeTabToPackage({
     title: snap.tabTitle,
     layoutStructure: snap.layoutStructure,
     colorPalette: snap.colorPalette,
     lineStyle: snap.lineStyle,
     boxStyle: snap.boxStyle,
     canvasTheme: snap.canvasTheme,
+    canvasBgColor: snap.canvasBgColor,
+    canvasBgPattern: snap.canvasBgPattern,
+    isEncrypted: snap.isEncrypted,
     mindData: snap.mindData
   });
 
@@ -129,20 +172,25 @@ export function exportSnapshotToFile(snapId) {
   showToast("💾 快照导出成功");
 }
 
-export function initAutoSaveEngine(renderApp) {
-  checkCrashRecovery(renderApp);
-
-  setInterval(() => {
+let autoSaveTimer = null;
+export function restartAutoSaveEngine(renderApp) {
+  if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null; }
+  const intervalSec = parseInt(getGlobalSettings().autoSaveInterval || "30", 10);
+  if (isNaN(intervalSec) || intervalSec <= 0) return;
+  autoSaveTimer = setInterval(() => {
     state.tabs.forEach(tab => {
-      if (tab.isDirty) {
-        if (window.requestIdleCallback) {
-          window.requestIdleCallback(() => createVersionSnapshot(tab, 'auto'), { timeout: 1500 });
-        } else {
-          setTimeout(() => createVersionSnapshot(tab, 'auto'), 50);
-        }
+      // 🛡️ 严格排除加密或锁定中的文档
+      if (tab.isDirty && !tab._isLocked && !tab.isEncrypted) {
+        if (window.requestIdleCallback) window.requestIdleCallback(() => createVersionSnapshot(tab, "auto"), { timeout: 1500 });
+        else setTimeout(() => createVersionSnapshot(tab, "auto"), 50);
       }
     });
-  }, 30000);
+  }, intervalSec * 1000);
+}
+
+export function initAutoSaveEngine(renderApp) {
+  checkCrashRecovery(renderApp);
+  restartAutoSaveEngine(renderApp);
 }
 
 function checkCrashRecovery(renderApp) {
@@ -152,20 +200,20 @@ function checkCrashRecovery(renderApp) {
   const latest = snapshots[0];
   const diffMinutes = (Date.now() - latest.timestamp) / 60000;
 
-  if (diffMinutes < 10 && latest.trigger === 'auto') {
+  if (diffMinutes < 10 && latest.trigger === 'auto' && !latest.isEncrypted) {
     const modal = document.getElementById("apple-recovery-modal");
     const timeHint = document.getElementById("recovery-time-hint");
     const btnConfirm = document.getElementById("btn-recovery-confirm");
     const btnDiscard = document.getElementById("btn-recovery-discard");
 
     if (!modal) return;
-    timeHint.innerText = `发现于 ${formatDate(latest.timestamp)} 自动备份的「${latest.tabTitle}」，包含 ${latest.nodeCount} 个节点。`;
+    timeHint.innerText = `发现于 ${formatDate(latest.timestamp)} 自动备份的「${latest.tabTitle}」。`;
     modal.classList.remove("hidden");
 
     btnConfirm.onclick = () => {
       modal.classList.add("hidden");
       restoreSnapshot(latest.id, 'overwrite', renderApp);
-      showToast("🛡️ 已成功恢复上次草稿数据与样式");
+      showToast("🛡️ 已成功加载上次草稿备份");
     };
 
     btnDiscard.onclick = () => {
@@ -177,19 +225,18 @@ function checkCrashRecovery(renderApp) {
 export function openVersionHistoryModal(renderApp) {
   const modal = document.getElementById("apple-history-modal");
   if (!modal) return;
-
   renderHistoryList("", renderApp);
   modal.classList.remove("hidden");
 }
 
 export function closeVersionHistoryModal() {
-  const modal = document.getElementById("apple-history-modal");
-  if (modal) modal.classList.add("hidden");
+  document.getElementById("apple-history-modal")?.classList.add("hidden");
 }
 
 export function renderHistoryList(filterKeyword = "", renderApp) {
   const listContainer = document.getElementById("history-snapshots-list");
   const countBadge = document.getElementById("history-total-count");
+  const storageBadge = document.getElementById("history-storage-usage");
   if (!listContainer) return;
 
   let snapshots = getAllSnapshots();
@@ -198,14 +245,15 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
     snapshots = snapshots.filter(s => s.tabTitle.toLowerCase().includes(kw));
   }
 
-  if (countBadge) countBadge.innerText = `${snapshots.length} 个快照版本`;
+  if (countBadge) countBadge.innerText = `${snapshots.length} 个版本`;
+  if (storageBadge) storageBadge.innerText = `容量占用: ${getSnapshotsStorageSize()}`;
 
   if (snapshots.length === 0) {
     listContainer.innerHTML = `
       <div class="history-empty-state">
         <div class="empty-icon">🕒</div>
         <div class="empty-text">暂无历史备份快照</div>
-        <div class="empty-sub">编辑导图时系统会自动创建版本，您也可以随时拍摄快照</div>
+        <div class="empty-sub">普通导图将定时自动备份，加密文档受零泄露隔离保护</div>
       </div>
     `;
     return;
@@ -225,9 +273,9 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
         <div class="snap-meta-row">
           <span>结构: <strong>${getLayoutName(snap.layoutStructure)}</strong></span>
           <span class="meta-dot">·</span>
-          <span>节点数: <strong>${snap.nodeCount}</strong></span>
+          <span>节点数: <strong>${snap.isEncrypted ? '🔒 密文封装' : snap.nodeCount}</strong></span>
           <span class="meta-dot">·</span>
-          <span>状态: ${snap.isEncrypted ? '🔒 AES-256 加密' : '明文存储'}</span>
+          <span>状态: ${snap.isEncrypted ? '🔒 AES-256 加密' : '明文备份'}</span>
         </div>
         <div class="snap-actions-row">
           <button class="snap-btn primary" data-action="restore-new" title="作为新标签页打开">打开快照</button>
@@ -262,7 +310,7 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
           showToast("♻️ 已成功覆盖还原快照");
         }
       } else if (action === 'export') {
-        exportSnapshotToFile(snapId);
+        await exportSnapshotToFile(snapId);
       } else if (action === 'delete') {
         deleteSnapshot(snapId);
         renderHistoryList(document.getElementById("history-search-input")?.value || "", renderApp);
@@ -285,13 +333,6 @@ function getLayoutName(layout) {
     "logic-left": "向左逻辑",
     "org-down": "组织架构"
   }[layout] || "思维导图";
-}
-
-function countNodes(node) {
-  if (!node) return 0;
-  let count = 1;
-  if (node.children) node.children.forEach(c => count += countNodes(c));
-  return count;
 }
 
 function formatDate(ts, compact = false) {

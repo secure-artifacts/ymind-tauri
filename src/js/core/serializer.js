@@ -1,23 +1,64 @@
 import { sanitizeFilename } from "../ui/dialog.js";
+import { encryptMindPayload, isEncryptedPackage } from "../storage/crypto.js";
 
-export function serializeTabToPackage(tab) {
-  const rootText = tab.mindData && tab.mindData.text ? tab.mindData.text.trim() : (tab.title || "思维导图");
+export async function serializeTabToPackage(tab) {
+  const rootText = tab?.mindData?.text ? tab.mindData.text.trim() : (tab?.title || "思维导图");
   const presetFilename = sanitizeFilename(rootText);
+  
+  let finalPayload = tab?.mindData || { id: "root", text: "中心主题", children: [] };
+  let isEncrypted = Boolean(tab?.isEncrypted && tab?.password);
+  let encryptedPackage = null;
+
+  if (isEncrypted) {
+    // 真实执行 AES-256-GCM 双层信封加密
+    encryptedPackage = await encryptMindPayload(finalPayload, tab.password, tab.passwordHint || "");
+  }
+
   return {
     filePackage: {
       fileType: "YMIND_PRO_DOCUMENT",
       version: "3.0",
-      title: tab.title || presetFilename,
-      layoutStructure: tab.layoutStructure || "mindmap",
-      colorPalette: tab.colorPalette || "apple-classic",
-      lineStyle: tab.lineStyle || "curve",
-      boxStyle: tab.boxStyle || "squircle",
-      canvasTheme: tab.canvasTheme || "studio-light",
-      mindData: tab.mindData
+      isEncrypted: isEncrypted,
+      title: tab?.title || presetFilename,
+      layoutStructure: tab?.layoutStructure || "mindmap",
+      colorPalette: tab?.colorPalette || "apple-classic",
+      lineStyle: tab?.lineStyle || "curve",
+      boxStyle: tab?.boxStyle || "squircle",
+      canvasTheme: tab?.canvasTheme || "studio-light",
+      canvasBgColor: tab?.canvasBgColor || "studio-white",
+      canvasBgPattern: tab?.canvasBgPattern || "dots",
+      // 加密状态下绝不输出明文 mindData
+      mindData: isEncrypted ? null : finalPayload,
+      encryptedVault: isEncrypted ? encryptedPackage : null
     },
     filenameWithExt: presetFilename + ".ymind",
     presetFilename: presetFilename
   };
+}
+
+export function parseTextToTree(text, filename = "思维导图") {
+  const lines = text.split(/\r?\n/).map(l => l.trimEnd()).filter(l => l.trim().length > 0);
+  if (lines.length === 0) return { id: "root", text: filename, children: [] };
+  const rootText = lines[0].replace(/^[#\-\s*]+/, "").trim() || filename;
+  const root = { id: "root", text: rootText, children: [] };
+  const stack = [{ node: root, indent: -1 }];
+
+  for (let i = 1; i < lines.length; i++) {
+    const raw = lines[i];
+    const indent = raw.search(/\S/);
+    const textClean = raw.replace(/^[#\-\s*]+/, "").trim();
+    if (!textClean) continue;
+
+    const newNode = { id: "node_" + Date.now() + "_" + i, text: textClean, children: [] };
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+    const parent = stack[stack.length - 1].node;
+    if (!parent.children) parent.children = [];
+    parent.children.push(newNode);
+    stack.push({ node: newNode, indent: indent });
+  }
+  return root;
 }
 
 export function normalizeMindNode(n) {
@@ -67,89 +108,69 @@ export function normalizeMindNode(n) {
     tags: tags.map(String),
     note: data.note || n.note || data.notes || n.notes || "",
     collapsed: Boolean(data.collapsed || n.collapsed || data.expand === false),
+    fontSize: data.fontSize || n.fontSize || null,
+    fontWeight: data.fontWeight || n.fontWeight || null,
+    textColor: data.textColor || n.textColor || null,
     children: children
   };
-}
-
-function convertFlatArrayToTree(list) {
-  if (!Array.isArray(list) || list.length === 0) return null;
-  const nodeMap = new Map();
-  let root = null;
-  list.forEach(item => {
-    const node = { ...item, children: [] };
-    nodeMap.set(String(item.id), node);
-    if (item.isroot || !item.parentid || (item.parentid === "root" && item.id === "root")) {
-      root = node;
-    }
-  });
-  if (!root && list[0]) root = nodeMap.get(String(list[0].id));
-  list.forEach(item => {
-    if (item.parentid && nodeMap.has(String(item.parentid))) {
-      const parent = nodeMap.get(String(item.parentid));
-      const current = nodeMap.get(String(item.id));
-      if (parent && current && parent !== current) {
-        if (!parent.children) parent.children = [];
-        parent.children.push(current);
-      }
-    }
-  });
-  return root;
 }
 
 export function deserializePackage(parsed, defaultFileName = "本地思维导图", filePath = null) {
   let rootRaw = parsed;
   let loadedLayout = "mindmap", loadedPalette = "apple-classic", loadedLine = "curve", loadedBox = "squircle", loadedTheme = "studio-light";
+  let loadedBgColor = "studio-white", loadedBgPattern = "dots";
+  let isEncrypted = false;
+  let encryptedVault = null;
 
   if (parsed && typeof parsed === "object") {
+    if (parsed.filePackage && typeof parsed.filePackage === "object") parsed = parsed.filePackage;
+    
+    // 检查是否为加密文档包
+    if (parsed.isEncrypted || parsed.encryptedVault || isEncryptedPackage(parsed)) {
+      isEncrypted = true;
+      encryptedVault = parsed.encryptedVault || (isEncryptedPackage(parsed) ? parsed : null);
+    }
+
     if (parsed.mindData) {
       rootRaw = parsed.mindData;
-      loadedLayout = parsed.layoutStructure || "mindmap";
-      loadedPalette = parsed.colorPalette || "apple-classic";
-      loadedLine = parsed.lineStyle || "curve";
-      loadedBox = parsed.boxStyle || "squircle";
-      loadedTheme = parsed.canvasTheme || "studio-light";
     } else if (parsed.root) {
       rootRaw = parsed.root;
-    } else if (parsed.format === "node_tree" && parsed.data) {
-      rootRaw = parsed.data;
-    } else if (parsed.format === "node_array" && Array.isArray(parsed.data)) {
-      rootRaw = convertFlatArrayToTree(parsed.data);
-    } else if (parsed.data && typeof parsed.data === "object" && (parsed.data.id || parsed.data.topic || parsed.data.text || parsed.data.children)) {
-      rootRaw = parsed.data;
-    } else if (Array.isArray(parsed) && parsed[0]) {
-      if (parsed[0].rootTopic) rootRaw = parsed[0].rootTopic;
-      else if (parsed[0].root) rootRaw = parsed[0].root;
-      else if (parsed[0].topic || parsed[0].text) rootRaw = parsed[0];
-      else if (parsed.some(i => i.isroot || i.parentid === undefined)) {
-        rootRaw = convertFlatArrayToTree(parsed);
-      }
     } else if (parsed.rootTopic) {
       rootRaw = parsed.rootTopic;
-    } else if (parsed.mindmap && parsed.mindmap.root) {
-      rootRaw = parsed.mindmap.root;
+    } else if (parsed.data) {
+      rootRaw = parsed.data;
     }
+
+    loadedLayout = parsed.layoutStructure || "mindmap";
+    loadedPalette = parsed.colorPalette || "apple-classic";
+    loadedLine = parsed.lineStyle || "curve";
+    loadedBox = parsed.boxStyle || "squircle";
+    loadedTheme = parsed.canvasTheme || "studio-light";
+    loadedBgColor = parsed.canvasBgColor || "studio-white";
+    loadedBgPattern = parsed.canvasBgPattern || "dots";
   }
 
-  const loadedMindData = normalizeMindNode(rootRaw) || { id: "root", text: "中心主题", children: [] };
   let fileDisplayName = defaultFileName;
   if (filePath) {
-    const parts = filePath.split(/[\\/\\]/);
+    const parts = filePath.split(/[\\/]/);
     fileDisplayName = parts[parts.length - 1].replace(/\.[^/.]+$/, "");
   } else if (parsed && parsed.title) {
     fileDisplayName = parsed.title;
-  } else if (parsed && parsed.meta && parsed.meta.name) {
-    fileDisplayName = parsed.meta.name;
-  } else if (loadedMindData && loadedMindData.text) {
-    fileDisplayName = loadedMindData.text.trim();
   }
+
+  const loadedMindData = isEncrypted ? null : (normalizeMindNode(rootRaw) || { id: "root", text: "中心主题", children: [] });
 
   return {
     fileDisplayName: fileDisplayName,
     loadedMindData: loadedMindData,
+    isEncrypted: isEncrypted,
+    encryptedVault: encryptedVault,
     loadedLayout: loadedLayout,
     loadedPalette: loadedPalette,
     loadedLine: loadedLine,
     loadedBox: loadedBox,
-    loadedTheme: loadedTheme
+    loadedTheme: loadedTheme,
+    loadedBgColor: loadedBgColor,
+    loadedBgPattern: loadedBgPattern
   };
 }

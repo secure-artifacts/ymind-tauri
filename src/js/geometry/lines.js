@@ -15,51 +15,55 @@ export function getLinePathData(node, child, isRootOfView, lineStyle = "curve") 
   }
 
   const dx = x2 - x1, dy = y2 - y1;
+  const dxAbs = Math.abs(dx), dyAbs = Math.abs(dy);
 
+  // 1. 极简直线
   if (lineStyle === "straight") {
     return `M ${x1} ${y1} L ${x2} ${y2}`;
   }
 
+  // 2. 直角折线
+  if (lineStyle === "sharp-ortho") {
+    if (isDown) {
+      const midY = (y1 + y2) / 2;
+      return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+    } else {
+      const midX = (x1 + x2) / 2;
+      return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+    }
+  }
+
+  // 3. 圆角折线
   if (lineStyle === "rounded-ortho") {
     const r = 8;
     if (isDown) {
       const midY = (y1 + y2) / 2;
       const sx = Math.sign(dx) || 1;
-      if (Math.abs(dx) < r * 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
+      if (dxAbs < r * 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
       return `M ${x1} ${y1} L ${x1} ${midY - r} Q ${x1} ${midY} ${x1 + sx * r} ${midY} L ${x2 - sx * r} ${midY} Q ${x2} ${midY} ${x2} ${midY + r} L ${x2} ${y2}`;
     } else {
       const midX = (x1 + x2) / 2;
       const sy = Math.sign(dy) || 1;
       const sx = isLeft ? -1 : 1;
-      if (Math.abs(dy) < r * 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
+      if (dyAbs < r * 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
       return `M ${x1} ${y1} L ${midX - sx * r} ${y1} Q ${midX} ${y1} ${midX} ${y1 + sy * r} L ${midX} ${y2 - sy * r} Q ${midX} ${y2} ${midX + sx * r} ${y2} L ${x2} ${y2}`;
     }
   }
 
-  if (lineStyle === "hand-drawn") {
-    if (isDown) {
-      const cx1 = x1 + dx * 0.12, cy1 = y1 + dy * 0.52;
-      const cx2 = x2 - dx * 0.12, cy2 = y2 - dy * 0.38;
-      return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-    } else {
-      const dxAbs = Math.abs(dx), dyAbs = Math.abs(dy);
-      const tension = isLeft ? -Math.min(Math.max(32, dyAbs * 0.35), dxAbs * 0.55) : Math.min(Math.max(32, dyAbs * 0.35), dxAbs * 0.55);
-      const sweepY = Math.sin(Math.min(Math.PI, dyAbs * 0.025)) * (dy >= 0 ? 3.2 : -3.2);
-      const cx1 = x1 + tension, cy1 = y1 + dy * 0.08 + sweepY;
-      const cx2 = isLeft ? (x2 + Math.max(26, dxAbs * 0.36)) : (x2 - Math.max(26, dxAbs * 0.36));
-      const cy2 = y2 - sweepY * 0.5;
-      return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-    }
+  // 4. 现代单圆弧
+  if (lineStyle === "arc-corner") {
+    if (isDown) return `M ${x1} ${y1} Q ${x1} ${y2} ${x2} ${y2}`;
+    return `M ${x1} ${y1} Q ${x2} ${y1} ${x2} ${y2}`;
   }
 
-  // 默认平滑曲线
+  // 5. 默认平滑贝塞尔曲线
   if (isDown) {
     return `M ${x1} ${y1} C ${x1} ${y1 + dy * 0.5}, ${x2} ${y2 - dy * 0.5}, ${x2} ${y2}`;
   } else if (isLeft) {
-    const tension = Math.min(Math.max(26, Math.abs(dy) * 0.28), Math.abs(dx) * 0.52);
-    return `M ${x1} ${y1} C ${x1 - tension} ${y1 + dy * 0.08}, ${x2 + Math.max(22, Math.abs(dx) * 0.35)} ${y2}, ${x2} ${y2}`;
+    const tension = Math.min(Math.max(26, dyAbs * 0.28), dxAbs * 0.52);
+    return `M ${x1} ${y1} C ${x1 - tension} ${y1 + dy * 0.08}, ${x2 + Math.max(22, dxAbs * 0.35)} ${y2}, ${x2} ${y2}`;
   } else {
-    const tension = Math.min(Math.max(26, Math.abs(dy) * 0.28), Math.abs(dx) * 0.52);
-    return `M ${x1} ${y1} C ${x1 + tension} ${y1 + dy * 0.08}, ${x2 - Math.max(22, Math.abs(dx) * 0.35)} ${y2}, ${x2} ${y2}`;
+    const tension = Math.min(Math.max(26, dyAbs * 0.28), dxAbs * 0.52);
+    return `M ${x1} ${y1} C ${x1 + tension} ${y1 + dy * 0.08}, ${x2 - Math.max(22, dxAbs * 0.35)} ${y2}, ${x2} ${y2}`;
   }
 }

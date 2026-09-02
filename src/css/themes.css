@@ -1,140 +1,74 @@
 #svg-infinite-bg { fill: transparent !important; }
-
-/* 1. 雪域纯白点阵 (Studio White Dots) */
-body.theme-studio-light #viewport,
-body.theme-dots #viewport,
-body.theme-light #viewport {
-  background-color: #f8fafc;
-  background-image: radial-gradient(#cbd5e1 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
+#viewport {
+  background-color: var(--canvas-bg, #f8fafc) !important;
+  transition: background-color 0.2s ease, background-image 0.2s ease;
 }
 
-/* 2. 库比蒂诺工程方格 (Cupertino Engineering Grid) */
-body.theme-cupertino-grid #viewport,
-body.theme-grid #viewport {
-  background-color: #f8fafc;
-  background-image: 
-    linear-gradient(to right, rgba(203, 213, 225, 0.5) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(203, 213, 225, 0.5) 1px, transparent 1px);
-  background-size: 20px 20px;
+/* 🎨 11 款精研底色系统 */
+#viewport.bg-color-studio-white, body[data-bg-color="studio-white"] #viewport {
+  --canvas-bg: #f8fafc; --pattern-color: #94a3b8; --pattern-line: rgba(148, 163, 184, 0.42);
+}
+#viewport.bg-color-warm-ivory, body[data-bg-color="warm-ivory"] #viewport {
+  --canvas-bg: #faf6ed; --pattern-color: #b4846c; --pattern-line: rgba(180, 132, 108, 0.38);
+}
+#viewport.bg-color-vintage-parchment, body[data-bg-color="vintage-parchment"] #viewport {
+  --canvas-bg: #f4eedb; --pattern-color: #a67c52; --pattern-line: rgba(166, 124, 82, 0.38);
+}
+#viewport.bg-color-matcha-mist, body[data-bg-color="matcha-mist"] #viewport {
+  --canvas-bg: #f1f7f2; --pattern-color: #4e8752; --pattern-line: rgba(78, 135, 82, 0.38);
+}
+#viewport.bg-color-lavender-fog, body[data-bg-color="lavender-fog"] #viewport {
+  --canvas-bg: #f7f4fb; --pattern-color: #9d72c4; --pattern-line: rgba(157, 114, 196, 0.38);
+}
+#viewport.bg-color-glacier-blue, body[data-bg-color="glacier-blue"] #viewport {
+  --canvas-bg: #f0f6fb; --pattern-color: #388ec9; --pattern-line: rgba(56, 142, 201, 0.38);
+}
+#viewport.bg-color-morandi-stone, body[data-bg-color="morandi-stone"] #viewport {
+  --canvas-bg: #eeedf0; --pattern-color: #788896; --pattern-line: rgba(120, 136, 150, 0.38);
+}
+#viewport.bg-color-space-gray, body[data-bg-color="space-gray"] #viewport {
+  --canvas-bg: #181a1f; --pattern-color: rgba(255, 255, 255, 0.35); --pattern-line: rgba(255, 255, 255, 0.16);
+}
+#viewport.bg-color-midnight-abyss, body[data-bg-color="midnight-abyss"] #viewport {
+  --canvas-bg: #09090b; --pattern-color: rgba(255, 255, 255, 0.28); --pattern-line: rgba(255, 255, 255, 0.14);
+}
+#viewport.bg-color-prussian-navy, body[data-bg-color="prussian-navy"] #viewport {
+  --canvas-bg: #0c1a2e; --pattern-color: rgba(56, 189, 248, 0.45); --pattern-line: rgba(56, 189, 248, 0.25);
+}
+#viewport.bg-color-slate-chalkboard, body[data-bg-color="slate-chalkboard"] #viewport {
+  --canvas-bg: #13241b; --pattern-color: rgba(74, 222, 128, 0.42); --pattern-line: rgba(74, 222, 128, 0.22);
 }
 
-/* 3. 暖心晨光羊皮纸 (Warm Parchment) */
-body.theme-warm-parchment #viewport,
-body.theme-warm #viewport {
-  background-color: #faf5ea;
-  background-image: radial-gradient(rgba(217, 119, 6, 0.22) 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
+/* 🖼 8 款底纹纹理系统 */
+#viewport.bg-pattern-dots, body[data-bg-pattern="dots"] #viewport {
+  background-image: radial-gradient(var(--pattern-color, #94a3b8) 1.4px, transparent 1.4px) !important;
+  background-size: 24px 24px !important;
 }
-
-/* 4. 京都抹茶微风 (Matcha Breeze) */
-body.theme-matcha-breeze #viewport,
-body.theme-matcha #viewport {
-  background-color: #f2f7f2;
-  background-image: radial-gradient(rgba(34, 197, 94, 0.25) 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
+#viewport.bg-pattern-grid, body[data-bg-pattern="grid"] #viewport {
+  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
 }
-
-/* 5. 普罗旺斯薰衣草雾 (Lavender Mist) */
-body.theme-lavender-mist #viewport,
-body.theme-lavender #viewport {
-  background-color: #f8f6fc;
-  background-image: 
-    radial-gradient(rgba(168, 85, 247, 0.22) 1.2px, transparent 1.2px),
-    linear-gradient(135deg, rgba(250, 245, 255, 0.9) 0%, rgba(243, 232, 255, 0.6) 100%);
-  background-size: 24px 24px, 100% 100%;
+#viewport.bg-pattern-isometric, body[data-bg-pattern="isometric"] #viewport {
+  background-image: linear-gradient(30deg, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(150deg, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(90deg, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px) !important;
+  background-size: 40px 69.28px !important;
 }
-
-/* 6. 加州落日暖霞 (California Sunset) */
-body.theme-california-sunset #viewport,
-body.theme-sunset-canvas #viewport {
-  background-color: #fff9f5;
-  background-image: 
-    radial-gradient(rgba(249, 115, 22, 0.2) 1.2px, transparent 1.2px),
-    linear-gradient(135deg, #fffaf0 0%, #fff1f2 50%, #fef3c7 100%);
-  background-size: 24px 24px, 100% 100%;
+#viewport.bg-pattern-cross, body[data-bg-pattern="cross"] #viewport {
+  background-image: radial-gradient(var(--pattern-color, #94a3b8) 1.6px, transparent 1.6px), linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+  background-position: 16px 16px, 0 0, 0 0 !important;
 }
-
-/* 7. 复古精装牛皮纸 (Vintage Craft) */
-body.theme-vintage-craft #viewport,
-body.theme-craft-paper #viewport {
-  background-color: #f4ebda;
-  background-image: 
-    radial-gradient(rgba(180, 120, 50, 0.22) 1.2px, transparent 1.2px),
-    linear-gradient(135deg, rgba(217, 119, 6, 0.06) 0%, rgba(180, 83, 9, 0.09) 100%);
-  background-size: 24px 24px, 100% 100%;
+#viewport.bg-pattern-lined, body[data-bg-pattern="lined"] #viewport {
+  background-image: linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px) !important;
+  background-size: 100% 28px !important;
 }
-
-/* 8. 专业工程蓝图 (Blueprint Pro) */
-body.theme-blueprint-pro #viewport,
-body.theme-blueprint #viewport {
-  background-color: #0c203b;
-  background-image: 
-    linear-gradient(to right, rgba(56, 189, 248, 0.18) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(56, 189, 248, 0.18) 1px, transparent 1px);
-  background-size: 24px 24px;
+#viewport.bg-pattern-stripes, body[data-bg-pattern="stripes"] #viewport {
+  background-image: repeating-linear-gradient(45deg, var(--pattern-line, rgba(148, 163, 184, 0.35)), var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px, transparent 16px) !important;
+  background-size: 24px 24px !important;
 }
-
-/* 9. 墨绿学院黑板 (Slate Chalkboard) */
-body.theme-slate-chalkboard #viewport,
-body.theme-chalkboard #viewport {
-  background-color: #162e22;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.2) 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
+#viewport.bg-pattern-blueprint, body[data-bg-pattern="blueprint"] #viewport {
+  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px), linear-gradient(to right, var(--pattern-color, #94a3b8) 1.5px, transparent 1.5px), linear-gradient(to bottom, var(--pattern-color, #94a3b8) 1.5px, transparent 1.5px) !important;
+  background-size: 10px 10px, 10px 10px, 50px 50px, 50px 50px !important;
 }
-
-/* 10. 北欧白木年轮 (Nordic Wood) */
-body.theme-nordic-wood #viewport {
-  background-color: #f6f3eb;
-  background-image: 
-    radial-gradient(rgba(160, 120, 80, 0.18) 1.2px, transparent 1.2px),
-    linear-gradient(to bottom, rgba(160, 120, 80, 0.05) 1px, transparent 1px);
-  background-size: 24px 24px, 100% 32px;
-}
-
-/* 11. 深空灰钛金属 (Space Gray Pro) */
-body.theme-space-gray #viewport,
-body.theme-graphite #viewport {
-  background-color: #181a1f;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.15) 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
-}
-
-/* 12. 极夜深邃黑曜 (Midnight Abyss) */
-body.theme-midnight-abyss #viewport,
-body.theme-midnight #viewport {
-  background-color: #09090b;
-  background-image: radial-gradient(#27272a 1.2px, transparent 1.2px);
-  background-size: 24px 24px;
-}
-
-/* 13. 超轻碳纤维织 (Carbon Fiber) */
-body.theme-carbon-fiber #viewport,
-body.theme-carbon #viewport {
-  background-color: #0f172a;
-  background-image: 
-    linear-gradient(45deg, #1e293b 25%, transparent 25%),
-    linear-gradient(-45deg, #1e293b 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #1e293b 75%),
-    linear-gradient(-45deg, transparent 75%, #1e293b 75%);
-  background-size: 20px 20px;
-}
-
-/* 14. 赛博冷霓矩阵 (Cyber Matrix) */
-body.theme-cyber-matrix #viewport {
-  background-color: #0a1124;
-  background-image: 
-    linear-gradient(to right, rgba(6, 182, 212, 0.18) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(6, 182, 212, 0.18) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
-
-/* 15. 暗夜极光幻境 (Aurora Borealis) */
-body.theme-aurora-borealis #viewport,
-body.theme-aurora #viewport {
-  background-color: #0e0d1f;
-  background-image: 
-    radial-gradient(rgba(192, 132, 252, 0.28) 1.2px, transparent 1.2px),
-    linear-gradient(135deg, rgba(24, 18, 54, 0.8) 0%, rgba(13, 26, 44, 0.8) 100%);
-  background-size: 24px 24px, 100% 100%;
+#viewport.bg-pattern-none, body[data-bg-pattern="none"] #viewport {
+  background-image: none !important;
 }

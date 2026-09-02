@@ -90,7 +90,7 @@ function handleMenuAction(action, renderApp) {
       renderApp();
     }
   } else if (action === "focus") {
-    state.focusedRootId = node.id;
+    state.focusedRootId = (state.focusedRootId === node.id) ? (state.mindData?.id || "root") : node.id;
     renderApp();
     smartCenterOnSelectedNode(state, true);
   } else if (action === "delete") {
