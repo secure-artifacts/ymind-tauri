@@ -1,4 +1,4 @@
-import { findParent, getPrimarySelectedNode, findNode, state, getGlobalSettings } from "./state.js";
+import { findParent, getPrimarySelectedNode, findNode, state, getActiveTab, getGlobalSettings } from "./state.js";
 import { syncMinimapViewportBox } from "../render/minimap.js";
 
 export const camera = {
@@ -9,6 +9,11 @@ export const camera = {
 };
 window.__CAMERA_TRANSFORM__ = camera.transform;
 
+function syncTabCamera() {
+  const curTab = getActiveTab();
+  if (curTab) curTab.camera = { ...camera.transform };
+}
+
 export function requestTransformUpdate() {
   if (camera.isTransformPending) return;
   camera.isTransformPending = true;
@@ -18,9 +23,13 @@ export function requestTransformUpdate() {
     const s = camera.transform.scale;
     const targetEl = document.getElementById("canvas-stage");
     if (targetEl) {
-      targetEl.setAttribute("transform", "translate(" + x + " " + y + ") scale(" + s + ")");
+      targetEl.setAttribute("transform", `translate(${x} ${y}) scale(${s})`);
     }
     syncMinimapViewportBox();
+    
+    const zt = document.getElementById("txt-zoom-level");
+    if (zt) zt.innerText = `${Math.round(s * 100)}%`;
+
     camera.isTransformPending = false;
   });
 }
@@ -34,6 +43,7 @@ export function startInertiaMomentum(vx, vy) {
   function momentumStep() {
     if (Math.abs(curVx) < minVelocity && Math.abs(curVy) < minVelocity) {
       camera.inertiaAnimationId = null;
+      syncTabCamera();
       return;
     }
     camera.transform.x += curVx * 10;
@@ -61,7 +71,7 @@ export function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-export function smoothPanTo(targetX, targetY, targetScale = camera.transform.scale, duration = 200) {
+export function smoothPanTo(targetX, targetY, targetScale = camera.transform.scale, duration = 280) {
   stopAllCameraAnimations();
   const startX = camera.transform.x;
   const startY = camera.transform.y;
@@ -78,65 +88,186 @@ export function smoothPanTo(targetX, targetY, targetScale = camera.transform.sca
     camera.transform.scale = startScale + (targetScale - startScale) * ease;
     requestTransformUpdate();
 
-    if (progress < 1) camera.cameraAnimationId = requestAnimationFrame(step);
-    else camera.cameraAnimationId = null;
+    if (progress < 1) {
+      camera.cameraAnimationId = requestAnimationFrame(step);
+    } else {
+      camera.cameraAnimationId = null;
+      syncTabCamera();
+    }
   }
   camera.cameraAnimationId = requestAnimationFrame(step);
 }
 
-// 🌟 全局焦点移动平滑定位引擎（避让右侧面板，平滑居中聚焦）
-export function locateFocusedNode(nodeOrId = null, animated = true) {
-  const followMode = getGlobalSettings().focusFollowMode || "smooth";
-  if (followMode === "off") return; // 关闭移动定位
+/**
+ * 🌟 核心算法：以「锚点节点 + 直接子节点列表」作为精确范围与数量考量单元
+ */
+function getDirectChildrenCluster(targetNode, root) {
+  if (!targetNode || !root) return null;
 
-  const vp = document.getElementById("viewport");
-  if (!vp || !state.mindData) return;
+  const isRoot = targetNode.id === (state.focusedRootId || root.id);
+  const structure = state.layoutStructure || "mindmap";
 
-  let targetNode = null;
-  if (typeof nodeOrId === "string") {
-    targetNode = findNode(nodeOrId, state.mindData);
-  } else if (nodeOrId && typeof nodeOrId === "object") {
-    targetNode = nodeOrId;
-  } else {
-    targetNode = getPrimarySelectedNode();
+  let anchorNode = targetNode;
+
+  // 1. 无子节点的叶子节点：锚点提升为其直接父节点
+  if (!isRoot && (!targetNode.children || targetNode.children.length === 0 || targetNode.collapsed)) {
+    const parent = findParent(targetNode.id, root);
+    if (parent) anchorNode = parent;
   }
 
-  if (!targetNode || targetNode.x === undefined || targetNode.y === undefined) return;
+  const isAnchorRoot = anchorNode.id === (state.focusedRootId || root.id);
+  const directChildren = (anchorNode.children && !anchorNode.collapsed) ? anchorNode.children : [];
+  const childCount = directChildren.length;
+
+  // 2. 双向导图根节点的对称平衡范围
+  if (isAnchorRoot && structure === "mindmap") {
+    const rootCenterX = root.x + (root.width || 80) / 2;
+    const rootCenterY = root.y + (root.height || 36) / 2;
+
+    let leftMax = 0;
+    let rightMax = 0;
+    let minY = root.y;
+    let maxY = root.y + (root.height || 36);
+
+    // 收集根节点自身的直接子节点
+    directChildren.forEach(c => {
+      if (c.x !== undefined && c.y !== undefined) {
+        const w = c.width || 80;
+        const h = c.height || 36;
+        if (c.x < rootCenterX) leftMax = Math.max(leftMax, rootCenterX - c.x);
+        if (c.x + w > rootCenterX) rightMax = Math.max(rightMax, (c.x + w) - rootCenterX);
+        minY = Math.min(minY, c.y);
+        maxY = Math.max(maxY, c.y + h);
+      }
+    });
+
+    const maxHalfWidth = Math.max(leftMax, rightMax);
+    const symmetricWidth = maxHalfWidth * 2;
+    const totalHeight = maxY - minY;
+
+    return {
+      width: Math.max(root.width || 80, symmetricWidth),
+      height: totalHeight,
+      centerX: rootCenterX,
+      centerY: (minY + maxY) / 2,
+      childCount: childCount,
+      isRoot: true
+    };
+  }
+
+  // 3. 常规分支锚点：仅包含 [anchorNode 自身 + 其全部直接子节点]
+  const focusGroup = [anchorNode, ...directChildren];
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  focusGroup.forEach(n => {
+    if (n.x !== undefined && n.y !== undefined) {
+      const w = n.width || 80;
+      const h = n.height || 36;
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x + w);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y + h);
+    }
+  });
+
+  if (minX === Infinity) return null;
+
+  return {
+    width: maxX - minX,
+    height: maxY - minY,
+    centerX: (minX + maxX) / 2,
+    centerY: (minY + maxY) / 2,
+    childCount: childCount,
+    isRoot: isAnchorRoot
+  };
+}
+
+/**
+ * 🌟 自适应直接子节点范围与数量的动态平衡缩放
+ */
+export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
+  const root = state.mindData;
+  if (!root) return;
+
+  const vp = document.getElementById("viewport");
+  if (!vp) return;
 
   const vpRect = vp.getBoundingClientRect();
-  const s = camera.transform.scale;
+  const usableWidth = vpRect.width > 0 ? vpRect.width : window.innerWidth;
+  const usableHeight = vpRect.height > 0 ? vpRect.height : window.innerHeight;
 
-  // 避让右侧打开的检查器面板 (340px)
-  const isInspectorOpen = !document.getElementById("format-sidebar")?.classList.contains("collapsed");
-  const usableWidth = isInspectorOpen ? Math.max(300, vpRect.width - 340) : vpRect.width;
+  let targetNode = null;
+  if (typeof nodeOrId === "string") targetNode = findNode(nodeOrId, root);
+  else if (nodeOrId && typeof nodeOrId === "object" && nodeOrId.id && nodeOrId.x !== undefined) targetNode = nodeOrId;
+  else targetNode = getPrimarySelectedNode();
 
-  const targetScreenX = usableWidth * 0.46;
-  const targetScreenY = vpRect.height * 0.5;
+  if (!targetNode) targetNode = findNode(state.focusedRootId, root) || root;
 
-  const targetX = targetScreenX - (targetNode.x + (targetNode.width || 80) / 2) * s;
-  const targetY = targetScreenY - (targetNode.y + (targetNode.height || 36) / 2) * s;
+  // 获取「锚点 + 直接子节点」的紧凑范围与子节点数量
+  const cluster = getDirectChildrenCluster(targetNode, root);
+  if (!cluster) return;
 
-  const dist = Math.hypot(targetX - camera.transform.x, targetY - camera.transform.y);
-  if (dist < 3) return;
+  // 视口安全内边距
+  const padX = cluster.isRoot ? 90 : 75;
+  const padY = cluster.isRoot ? 70 : 55;
+  const totalW = cluster.width + padX * 2;
+  const totalH = cluster.height + padY * 2;
 
-  if (followMode === "instant" || !animated) {
+  // 几何理想适配比例
+  let fitScale = Math.min(usableWidth / totalW, usableHeight / totalH);
+
+  // ⚖️ 子节点数量与缩放比例联动规则：
+  // 1. 无子节点或极少子节点 (k <= 3): 100% 显示，绝无冗余缩小与放大
+  // 2. 中等子节点 (4 <= k <= 8): 适配缩放，可读性下限保底 0.75
+  // 3. 密集多子节点 (k > 8): 适配缩放，可读性下限保底 0.65
+  let minAllowed = 0.65;
+  if (cluster.isRoot) {
+    minAllowed = 0.45;
+  } else if (cluster.childCount <= 3) {
+    minAllowed = 0.88;
+  } else if (cluster.childCount <= 8) {
+    minAllowed = 0.72;
+  }
+
+  let targetScale = Math.max(minAllowed, Math.min(1.00, fitScale));
+
+  // 舒适度吸附：如果计算结果非常接近 100% (>= 0.88 且放得下)，吸附为 1.00 原生清晰度
+  if (targetScale >= 0.88 && fitScale >= 0.88) {
+    targetScale = 1.00;
+  }
+
+  // 中心对齐
+  const screenCenterX = usableWidth * 0.50;
+  const screenCenterY = usableHeight * 0.50;
+  const targetX = screenCenterX - cluster.centerX * targetScale;
+  const targetY = screenCenterY - cluster.centerY * targetScale;
+
+  if (animated) {
+    smoothPanTo(targetX, targetY, targetScale, 280);
+  } else {
     stopAllCameraAnimations();
     camera.transform.x = targetX;
     camera.transform.y = targetY;
+    camera.transform.scale = targetScale;
+    syncTabCamera();
     requestTransformUpdate();
-  } else {
-    smoothPanTo(targetX, targetY, s, 220);
   }
 }
 
-export function smartCenterOnSelectedNode(state, animated = true) {
-  locateFocusedNode(getPrimarySelectedNode(), animated);
+export function locateFocusedNode(nodeOrId = null, animated = true) {
+  const followMode = getGlobalSettings().focusFollowMode || "smooth";
+  if (followMode === "off") return;
+  smartAdaptiveCenter(nodeOrId, animated);
+}
+
+export function smartCenterOnSelectedNode(stateRef, animated = true) {
+  smartAdaptiveCenter(null, animated);
 }
 
 export function locateNodeCenter(nodeOrId = null, animated = true) {
-  locateFocusedNode(nodeOrId, animated);
+  smartAdaptiveCenter(nodeOrId, animated);
 }
 
 export function ensureNodeVisible(nodeOrId = null, animated = true) {
-  locateFocusedNode(nodeOrId, animated);
+  smartAdaptiveCenter(nodeOrId, animated);
 }

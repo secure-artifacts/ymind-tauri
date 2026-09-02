@@ -182,7 +182,7 @@ export function renderVectorTree(node, level = 0, state, callbacks) {
     currentOffset += 22;
   }
 
-  // 5. 文本
+  // 5. 文字排版与字号/粗细 (🌟 行内样式注入，彻底避免 CSS 样式表覆盖)
   const isDarkCanvas = ["space-gray", "midnight-abyss", "prussian-navy", "slate-chalkboard"].includes(state.canvasBgColor);
   let defaultFill = "#0f172a";
   if (boxStyle === "underline") {
@@ -202,9 +202,15 @@ export function renderVectorTree(node, level = 0, state, callbacks) {
   text.setAttribute("x", currentOffset + node.textWidth / 2);
   text.setAttribute("y", node.height / 2);
   text.setAttribute("text-anchor", "middle");
-  text.setAttribute("fill", finalFill);
+  
+  // 同时注入 style 与 attribute 确保最高特异性
+  text.style.fontSize = fontSize + "px";
+  text.style.fontWeight = String(fontWeight);
+  text.style.fill = finalFill;
   text.setAttribute("font-size", fontSize + "px");
-  text.setAttribute("font-weight", fontWeight);
+  text.setAttribute("font-weight", String(fontWeight));
+  text.setAttribute("fill", finalFill);
+
   text.textContent = node.text;
   g.appendChild(text);
   currentOffset += node.textWidth + 8;
@@ -231,8 +237,8 @@ export function renderVectorTree(node, level = 0, state, callbacks) {
       tagTxt.setAttribute("text-anchor", "middle");
       tagTxt.setAttribute("dominant-baseline", "central");
       tagTxt.setAttribute("fill", "#475569");
-      tagTxt.setAttribute("font-size", "9.5");
-      tagTxt.setAttribute("font-weight", "600");
+      tagTxt.style.fontSize = "9.5px";
+      tagTxt.style.fontWeight = "600";
       tagTxt.textContent = t;
       tagG.appendChild(tagTxt);
       g.appendChild(tagG);
@@ -254,8 +260,8 @@ export function renderVectorTree(node, level = 0, state, callbacks) {
 
     const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
     badgeText.setAttribute("fill", node.colorTheme ? node.colorTheme.badge : "#86868b");
-    badgeText.setAttribute("font-size", "9.5");
-    badgeText.setAttribute("font-weight", "700");
+    badgeText.style.fontSize = "9.5px";
+    badgeText.style.fontWeight = "700";
     badgeText.setAttribute("text-anchor", "middle");
     badgeText.setAttribute("dominant-baseline", "central");
     badgeText.textContent = node.collapsed ? node.children.length : "-";
@@ -270,7 +276,7 @@ export function renderVectorTree(node, level = 0, state, callbacks) {
     g.appendChild(badgeG);
   }
 
-  // 节点点击与测试模式揭晓
+  // 点击事件与记忆掩码揭晓
   g.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -311,6 +317,7 @@ export function startEditNode(node, state, onRender) {
   inlineEditor.style.width = `${Math.max(nodeRect.width, 96)}px`;
   inlineEditor.style.height = `${nodeRect.height}px`;
   inlineEditor.style.fontSize = `${(node.id === state.focusedRootId ? 15.5 : 13.5) * camera.transform.scale}px`;
+  inlineEditor.style.fontWeight = String(node.fontWeight || (node.id === state.focusedRootId ? "700" : "500"));
   inlineEditor.value = node.text;
   inlineEditor.classList.remove("hidden");
 

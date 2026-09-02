@@ -15,7 +15,6 @@ const BG_COLOR_MAP = {
   "slate-chalkboard": "#13241b"
 };
 
-// 通用节点样式批量/单选更新函数
 function applyNodeStyle(updateFn) {
   const targetIds = (state.selectedIds && state.selectedIds.size > 0)
     ? Array.from(state.selectedIds)
@@ -54,19 +53,23 @@ export function syncInspectorUi() {
   document.querySelectorAll("#menu-bg-colors .bg-color-swatch").forEach(c => c.classList.toggle("active", c.dataset.color === currentColor));
   document.querySelectorAll("#menu-bg-patterns .bg-pattern-card").forEach(b => b.classList.toggle("active", b.dataset.pattern === currentPattern));
 
-  // 🌟 同步选中节点的专属字号、粗细、文字颜色
+  // 🌟 精准匹配选中节点的字号、粗细和颜色
   const primaryNode = getPrimarySelectedNode();
   if (primaryNode) {
     const isRoot = primaryNode.id === (state.focusedRootId || state.mindData?.id);
     const curSize = primaryNode.fontSize ? String(parseInt(primaryNode.fontSize, 10)) : (isRoot ? "16" : "14");
-    const curWeight = primaryNode.fontWeight ? String(primaryNode.fontWeight) : (isRoot ? "700" : "500");
+    
+    let curWeight = primaryNode.fontWeight ? String(primaryNode.fontWeight) : (isRoot ? "700" : "500");
+    if (curWeight === "bold") curWeight = "700";
+    if (curWeight === "normal" || curWeight === "500") curWeight = "400";
+
     const curColor = primaryNode.textColor || "default";
 
     document.querySelectorAll("#node-font-size-options .style-btn").forEach(b => {
-      b.classList.toggle("active", b.dataset.size === curSize || (curSize === "16" && b.dataset.size === "14"));
+      b.classList.toggle("active", b.dataset.size === curSize || (curSize === "16" && b.dataset.size === "14") || (curSize === "13.5" && b.dataset.size === "14"));
     });
     document.querySelectorAll("#node-font-weight-options .style-btn").forEach(b => {
-      b.classList.toggle("active", b.dataset.weight === curWeight || (curWeight === "500" && b.dataset.weight === "400"));
+      b.classList.toggle("active", b.dataset.weight === curWeight || (curWeight === "400" && b.dataset.weight === "400"));
     });
     document.querySelectorAll("#node-text-color-options .bg-color-swatch").forEach(c => {
       c.classList.toggle("active", c.dataset.color === curColor);
@@ -91,14 +94,13 @@ export function applyCanvasThemeToBody(bgColor = "studio-white", bgPattern = "do
 }
 
 export function initInspectorEvents(renderApp) {
-  // 手风琴折叠
   document.querySelectorAll(".inspector-accordion-header").forEach(h => {
     h.onclick = () => {
       h.parentElement?.classList.toggle("open");
     };
   });
 
-  // 🌟 1. 节点字号大小点击
+  // 🌟 字号大小
   document.querySelectorAll("#node-font-size-options .style-btn").forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -108,7 +110,7 @@ export function initInspectorEvents(renderApp) {
     };
   });
 
-  // 🌟 2. 节点字体粗细点击
+  // 🌟 字体粗细 (常规 400 / 中粗 600 / 加粗 700)
   document.querySelectorAll("#node-font-weight-options .style-btn").forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -118,7 +120,7 @@ export function initInspectorEvents(renderApp) {
     };
   });
 
-  // 🌟 3. 节点文字颜色点击
+  // 🌟 文字颜色
   document.querySelectorAll("#node-text-color-options .bg-color-swatch").forEach(swatch => {
     swatch.onclick = (e) => {
       e.stopPropagation();
@@ -128,7 +130,6 @@ export function initInspectorEvents(renderApp) {
     };
   });
 
-  // 4. 骨架结构切换
   document.querySelectorAll("#menu-structures .struct-card").forEach(card => {
     card.onclick = (e) => {
       e.stopPropagation();
@@ -142,7 +143,6 @@ export function initInspectorEvents(renderApp) {
     };
   });
 
-  // 5. 调色板分类筛选
   document.querySelectorAll("#palette-category-tabs .palette-cat-btn").forEach(btn => {
     btn.onclick = () => {
       document.querySelectorAll("#palette-category-tabs .palette-cat-btn").forEach(b => b.classList.remove("active"));

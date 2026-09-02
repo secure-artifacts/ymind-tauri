@@ -199,3 +199,25 @@ initInspectorEvents(renderApp);
 
 showHome();
 console.log("🛡️ [YMind Pro Studio] 未保存修改防丢与关闭确认拦截系统已就绪！");
+
+// 🧪 注册全局自动化测试热键 (Ctrl+Shift+T / Alt+T)
+
+window.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t") || (e.altKey && e.key.toLowerCase() === "t")) {
+    e.preventDefault();
+    runAllTests(renderApp);
+  }
+});
+
+// 🧪 本地自动化测试热键 (Alt+T / Ctrl+Shift+T，动态按需加载，不影响生产代码)
+window.addEventListener("keydown", async (e) => {
+  if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t") || (e.altKey && e.key.toLowerCase() === "t")) {
+    e.preventDefault();
+    try {
+      const { runAllTests } = await import("./js/test/test-runner.js");
+      runAllTests(renderApp);
+    } catch {
+      console.info("💡 本地测试模块未包含在提交中");
+    }
+  }
+});

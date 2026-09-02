@@ -48,8 +48,8 @@
 .minimap-viewport-box { position: absolute; top: 0; left: 0; border: 1.5px solid var(--apple-red); background: rgba(255, 59, 48, 0.12); pointer-events: none; border-radius: 3px; -webkit-corner-smoothing: 0.62; }
 .svg-link { fill: none !important; stroke-linecap: round !important; stroke-linejoin: round !important; }
 .svg-node { cursor: pointer; }
-.svg-node text.node-text { font-size: 13.5px; font-weight: 500; dominant-baseline: central; pointer-events: none; }
-.svg-node.root text.node-text { font-size: 15.5px; font-weight: 700; fill: #ffffff; }
+/* 🌟 移除写死的 font-size 与 font-weight，完全由 JS 数据层驱动 */
+.svg-node text.node-text { dominant-baseline: central; pointer-events: none; }
 .inline-editor { position: absolute; z-index: 500; border: 2px solid var(--apple-blue) !important; border-radius: 8px; -webkit-corner-smoothing: 0.62; padding: 0 8px; text-align: center; outline: none; background: #ffffff !important; color: #1e293b !important; box-shadow: 0 4px 16px rgba(0, 113, 227, 0.28); font-family: inherit; font-weight: 600; display: block; }
 .apple-breadcrumb-capsule { position: absolute; top: 96px; left: 20px; z-index: 90; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px); padding: 5px 12px; border-radius: 20px; -webkit-corner-smoothing: 0.62; border: 0.5px solid var(--border-subtle); box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
 .breadcrumb-trail { display: flex; align-items: center; gap: 4px; }
