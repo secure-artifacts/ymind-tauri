@@ -1,6 +1,7 @@
 import { state, getActiveTab, closeTab, saveSnapshot } from "../core/state.js";
 import { encryptMindPayload, decryptMindPayload, evaluatePasswordStrength } from "../storage/crypto.js";
 import { showToast } from "./dialog.js";
+import { bus, EVENTS } from "../core/event-bus.js";
 
 let renderAppRef = null;
 
@@ -51,7 +52,6 @@ export function closeVaultSetModal() {
   document.getElementById("apple-vault-set-modal")?.classList.add("hidden");
 }
 
-// 🛡️ 核心防线：锁定时彻底销毁内存树、剪贴板分支与搜索缓存
 export async function lockCurrentTab() {
   const tab = getActiveTab();
   if (!tab || !tab.isEncrypted) {
@@ -65,16 +65,11 @@ export async function lockCurrentTab() {
 
   tab.mindData = { id: "root", text: "🔒 导图已锁定", children: [] };
   tab.password = null;
-  tab.history = [];
-  tab.historyIndex = -1;
+  tab.history = [{ id: "root", text: "🔒 导图已锁定", children: [] }];
+  tab.historyIndex = 0;
   tab._isLocked = true;
 
-  // 抹除全局剪贴板与 DOM 画布
   state.clipboardBranch = null;
-  const layerNodes = document.getElementById("layer-nodes");
-  const layerConns = document.getElementById("layer-connections");
-  if (layerNodes) layerNodes.innerHTML = "";
-  if (layerConns) layerConns.innerHTML = "";
 
   showLockScreen(tab);
   updateSecurityDockStatus();
@@ -91,8 +86,8 @@ export function showLockScreen(tab) {
   if (!lockScreen || !tab) return;
 
   tab._isLocked = true;
-  if (posterTitle) posterTitle.innerText = "「" + (tab.title || "思维导图") + "」受密码保护";
-  
+  if (posterTitle) posterTitle.innerText = `「${tab.title || "思维导图"}」受密码保护`;
+
   const hintText = tab.passwordHint || tab.encryptedVault?.hint;
   if (hintText) {
     if (txtPosterHint) txtPosterHint.innerText = hintText;
@@ -140,11 +135,7 @@ export function initVaultManager(renderApp) {
     if (curTab && curTab.isEncrypted && curTab._isLocked && !curTab.password) {
       closeTab(curTab.id);
     }
-    if (window.__SHOW_HOME__) {
-      window.__SHOW_HOME__();
-    } else {
-      document.getElementById("btn-back-home")?.click();
-    }
+    bus.emit(EVENTS.SHOW_HOME);
   }
 
   btnPosterClose?.addEventListener("click", handleReturnToHome);
@@ -232,16 +223,15 @@ export function initVaultManager(renderApp) {
 
       btnPosterUnlock.innerText = "⏳";
       btnPosterUnlock.disabled = true;
-      
+
       const decryptedData = await decryptMindPayload(tab.encryptedVault, inputPass);
-      
       tab.mindData = decryptedData;
       tab.password = inputPass;
       tab.passwordHint = tab.encryptedVault.hint || "";
       tab._isLocked = false;
       tab.selectedIds = new Set([tab.mindData.id || "root"]);
       tab.focusedRootId = tab.mindData.id || "root";
-      tab.history = [JSON.stringify(tab.mindData)];
+      tab.history = [JSON.parse(JSON.stringify(tab.mindData))];
       tab.historyIndex = 0;
 
       btnPosterUnlock.innerText = "➔";
@@ -267,6 +257,5 @@ export function initVaultManager(renderApp) {
     else errorMsg?.classList.add("hidden");
   });
 
-  window.__SYNC_VAULT_UI__ = updateSecurityDockStatus;
   updateSecurityDockStatus();
 }
