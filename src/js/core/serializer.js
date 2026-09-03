@@ -1,6 +1,46 @@
 import { sanitizeFilename } from "../ui/dialog.js";
 import { encryptMindPayload, isEncryptedPackage } from "../storage/crypto.js";
 
+// 🌟 纯原生零依赖流式解析真实 .xmind (ZIP 格式) 中的 content.json
+export async function extractRealXMindZip(arrayBuffer) {
+  const view = new DataView(arrayBuffer);
+  // 校验 ZIP Local File Header 签名 0x04034b50 (PK\x03\x04)
+  if (view.byteLength < 30 || view.getUint32(0, true) !== 0x04034b50) {
+    throw new Error("NOT_A_ZIP");
+  }
+
+  let offset = 0;
+  const dec = new TextDecoder();
+
+  while (offset + 30 < arrayBuffer.byteLength) {
+    if (view.getUint32(offset, true) !== 0x04034b50) break;
+
+    const method = view.getUint16(offset + 8, true);
+    const compSize = view.getUint32(offset + 18, true);
+    const nameLen = view.getUint16(offset + 26, true);
+    const extraLen = view.getUint16(offset + 28, true);
+    const nameBytes = new Uint8Array(arrayBuffer, offset + 30, nameLen);
+    const fileName = dec.decode(nameBytes);
+
+    const dataOffset = offset + 30 + nameLen + extraLen;
+
+    if (fileName === "content.json") {
+      const rawSlice = new Uint8Array(arrayBuffer, dataOffset, compSize);
+      if (method === 0) {
+        return JSON.parse(dec.decode(rawSlice));
+      } else if (method === 8) {
+        // 标准 Deflate 原生解压流
+        const ds = new DecompressionStream("deflate-raw");
+        const stream = new Response(rawSlice).body.pipeThrough(ds);
+        const jsonText = await new Response(stream).text();
+        return JSON.parse(jsonText);
+      }
+    }
+    offset = dataOffset + compSize;
+  }
+  throw new Error("XMIND_CONTENT_NOT_FOUND");
+}
+
 export async function serializeTabToPackage(tab) {
   const rootText = tab?.mindData?.text ? tab.mindData.text.trim() : (tab?.title || "思维导图");
   const presetFilename = sanitizeFilename(rootText);
@@ -10,7 +50,6 @@ export async function serializeTabToPackage(tab) {
   let encryptedPackage = null;
 
   if (isEncrypted) {
-    // 真实执行 AES-256-GCM 双层信封加密
     encryptedPackage = await encryptMindPayload(finalPayload, tab.password, tab.passwordHint || "");
   }
 
@@ -27,7 +66,6 @@ export async function serializeTabToPackage(tab) {
       canvasTheme: tab?.canvasTheme || "studio-light",
       canvasBgColor: tab?.canvasBgColor || "studio-white",
       canvasBgPattern: tab?.canvasBgPattern || "dots",
-      // 加密状态下绝不输出明文 mindData
       mindData: isEncrypted ? null : finalPayload,
       encryptedVault: isEncrypted ? encryptedPackage : null
     },
@@ -122,10 +160,13 @@ export function deserializePackage(parsed, defaultFileName = "本地思维导图
   let isEncrypted = false;
   let encryptedVault = null;
 
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    parsed = parsed[0];
+  }
+
   if (parsed && typeof parsed === "object") {
     if (parsed.filePackage && typeof parsed.filePackage === "object") parsed = parsed.filePackage;
     
-    // 检查是否为加密文档包
     if (parsed.isEncrypted || parsed.encryptedVault || isEncryptedPackage(parsed)) {
       isEncrypted = true;
       encryptedVault = parsed.encryptedVault || (isEncryptedPackage(parsed) ? parsed : null);
@@ -133,12 +174,14 @@ export function deserializePackage(parsed, defaultFileName = "本地思维导图
 
     if (parsed.mindData) {
       rootRaw = parsed.mindData;
-    } else if (parsed.root) {
-      rootRaw = parsed.root;
     } else if (parsed.rootTopic) {
       rootRaw = parsed.rootTopic;
+    } else if (parsed.root) {
+      rootRaw = parsed.root;
     } else if (parsed.data) {
       rootRaw = parsed.data;
+    } else if (parsed.topic) {
+      rootRaw = parsed.topic;
     }
 
     loadedLayout = parsed.layoutStructure || "mindmap";

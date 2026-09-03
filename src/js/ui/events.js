@@ -1,255 +1,192 @@
-import { state, undo, redo, saveSnapshot, findParent, getActiveTab, createNewTab, getPrimarySelectedNode } from "../core/state.js";
-import { camera, requestTransformUpdate, startInertiaMomentum, stopAllCameraAnimations, locateFocusedNode, smartCenterOnSelectedNode } from "../core/camera.js";
+import { state, getActiveTab, createNewTab, getPrimarySelectedNode, findNode } from "../core/state.js";
+import { saveSnapshot } from "../core/history.js";
+import { isNodeVisibleInTree } from "../core/tree-utils.js";
+import { camera, requestTransformUpdate, startInertiaMomentum, stopAllCameraAnimations, locateFocusedNode } from "../core/camera.js";
 import { syncInspectorUi, applyCanvasThemeToBody } from "./inspector.js";
 import { openNotesDrawer } from "./notes.js";
-import { openFlashcardModal, toggleRecallMode } from "./flashcards.js";
 import { showToast } from "./dialog.js";
-import { serializeTabToPackage, deserializePackage, parseTextToTree } from "../core/serializer.js";
+import { serializeTabToPackage, deserializePackage, parseTextToTree, extractRealXMindZip } from "../core/serializer.js";
 import { recordRecentDoc } from "./home.js";
-import { showLockScreen, lockCurrentTab, openVaultSetModal, updateSecurityDockStatus } from "./vault.js";
-import { closeTabWithConfirm } from "../core/tab-manager.js";
+import { showLockScreen, updateSecurityDockStatus } from "./vault.js";
+import { startEditNode } from "../render/render.js";
+import { addChildNode, addSiblingNode, deleteSelectedNodes, markDirtyAndRefresh } from "../interaction/node-actions.js";
+import { bindGlobalShortcuts } from "../interaction/shortcuts.js";
+import { bus, EVENTS } from "../core/event-bus.js";
 
-async function callTauri(cmd, args) {
+let peekTargetNode = null;
+
+async function callTauri(cmd, args = {}) {
+  if (window.__TAURI__?.core?.invoke) return await window.__TAURI__.core.invoke(cmd, args);
+  if (window.__TAURI__?.invoke) return await window.__TAURI__.invoke(cmd, args);
+  if (window.__TAURI_INTERNALS__?.invoke) return await window.__TAURI_INTERNALS__.invoke(cmd, args);
+  throw new Error("TAURI_IPC_UNAVAILABLE");
+}
+
+function fallbackPickNode(worldX, worldY, pad = 8) {
+  const root = findNode(state.focusedRootId, state.mindData) || state.mindData;
+  if (!root) return null;
+  let hit = null;
+  function walk(n) {
+    if (n.x !== undefined && n.y !== undefined) {
+      if (worldX >= n.x - pad && worldX <= n.x + n.width + pad &&
+          worldY >= n.y - pad && worldY <= n.y + n.height + pad) {
+        hit = n;
+      }
+    }
+    if (n.children && !n.collapsed) {
+      for (let i = 0; i < n.children.length; i++) walk(n.children[i]);
+    }
+  }
+  walk(root);
+  return hit;
+}
+
+function fallbackPickBadge(worldX, worldY) {
+  const root = findNode(state.focusedRootId, state.mindData) || state.mindData;
+  if (!root) return null;
+  let hit = null;
+  function walk(n) {
+    if (n.children && n.children.length > 0 && n.id !== state.focusedRootId) {
+      const bx = (n.branchDirection === "left") ? n.x : (n.x + n.width);
+      const by = n.y + n.height / 2;
+      if (Math.hypot(worldX - bx, worldY - by) <= 12) { hit = n; return; }
+    }
+    if (n.children && !n.collapsed) {
+      for (let i = 0; i < n.children.length; i++) {
+        walk(n.children[i]);
+        if (hit) return;
+      }
+    }
+  }
+  walk(root);
+  return hit;
+}
+
+// 🌟 精准 AABB 框选：仅遍历当前可见展开节点，天然隔绝折叠子节点
+function computeDirectMarquee(minX, maxX, minY, maxY) {
+  const { x, y, scale: s } = camera.transform;
+  const worldL = (minX - x) / s, worldR = (maxX - x) / s;
+  const worldT = (minY - y) / s, worldB = (maxY - y) / s;
+  const hitSet = new Set();
+  const root = findNode(state.focusedRootId, state.mindData) || state.mindData;
+  if (!root) return hitSet;
+
+  function traverse(n) {
+    if (n.x !== undefined && n.y !== undefined) {
+      const nx2 = n.x + n.width, ny2 = n.y + n.height;
+      if (!(nx2 < worldL || n.x > worldR || ny2 < worldT || n.y > worldB)) {
+        hitSet.add(n.id);
+      }
+    }
+    if (n.children && !n.collapsed) {
+      for (let i = 0; i < n.children.length; i++) traverse(n.children[i]);
+    }
+  }
+  traverse(root);
+  return hitSet;
+}
+
+export function updateSelectionOnly() {
+  bus.emit(EVENTS.RENDER_APP);
+}
+
+export async function handleLoadedFileContent(contentData, filePath, renderApp) {
+  let parsed = null;
+  if (contentData instanceof ArrayBuffer) {
+    try {
+      parsed = await extractRealXMindZip(contentData);
+    } catch {
+      contentData = new TextDecoder().decode(contentData);
+    }
+  }
+  if (typeof contentData === "string") {
+    try {
+      parsed = JSON.parse(contentData);
+    } catch {
+      parsed = {
+        title: filePath ? filePath.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "") : "本地导图",
+        mindData: parseTextToTree(contentData)
+      };
+    }
+  }
+
+  const cur = getActiveTab();
+  const shouldReuse = cur && !cur.filePath && !cur.isDirty && (!cur.mindData?.children || cur.mindData.children.length === 0);
+  let tab = shouldReuse ? cur : createNewTab();
+  const res = deserializePackage(parsed, "本地思维导图", filePath);
+
+  tab.filePath = (filePath && (filePath.includes("/") || filePath.includes("\\"))) ? filePath : null;
+  tab.title = res.fileDisplayName;
+  tab.layoutStructure = res.loadedLayout;
+  tab.colorPalette = res.loadedPalette;
+  tab.lineStyle = res.loadedLine;
+  tab.boxStyle = res.loadedBox;
+  tab.canvasBgColor = res.loadedBgColor;
+  tab.canvasBgPattern = res.loadedBgPattern;
+  tab.isDirty = false;
+  state.isLayoutDirty = true;
+
+  if (res.isEncrypted) {
+    tab.isEncrypted = true;
+    tab.encryptedVault = res.encryptedVault;
+    tab.mindData = { id: "root", text: "🔒 " + tab.title, children: [] };
+    tab._isLocked = true;
+    showLockScreen(tab);
+    showToast("🔒 此文档已受密码保护，请输入密码解锁");
+  } else {
+    tab.isEncrypted = false;
+    tab.encryptedVault = null;
+    tab.mindData = res.loadedMindData;
+    tab.selectedIds = new Set([tab.mindData.id || "root"]);
+    tab.focusedRootId = tab.mindData.id || "root";
+    showToast("📂 已打开: " + tab.title);
+  }
+
+  applyCanvasThemeToBody(tab.canvasBgColor, tab.canvasBgPattern);
+  syncInspectorUi();
+  updateSecurityDockStatus();
+  bus.emit(EVENTS.SHOW_WORKSPACE);
+}
+
+export async function performSave(customTab = null) {
+  let tab = customTab || getActiveTab();
+  if (!tab) return;
+  if (tab._isLocked) { showToast("⚠️ 请先输入密码解锁后再保存"); return; }
+
+  const pkg = await serializeTabToPackage(tab);
+  const contentStr = JSON.stringify(pkg.filePackage, null, 2);
+
   try {
-    if (window.__TAURI__?.core?.invoke) return await window.__TAURI__.core.invoke(cmd, args);
-    if (window.__TAURI__?.invoke) return await window.__TAURI__.invoke(cmd, args);
-    if (window.__TAURI_INTERNALS__?.invoke) return await window.__TAURI_INTERNALS__.invoke(cmd, args);
-  } catch (err) {
-    console.error(`[Tauri IPC Error] ${cmd}:`, err);
-  }
-  return null;
-}
-
-function handleArrowNavigation(key, renderApp) {
-  const current = getPrimarySelectedNode();
-  if (!current || !state.mindData) return;
-
-  const root = state.mindData;
-  const isRoot = current.id === (state.focusedRootId || root.id);
-  const parent = findParent(current.id, root);
-  const structure = state.layoutStructure || "mindmap";
-
-  let target = null;
-  if (key === "ArrowRight") {
-    if (isRoot) target = current.rightChildren?.[0] || current.children?.[0];
-    else if (current.branchDirection === "left") target = parent;
-    else if (current.children && current.children.length > 0 && !current.collapsed) target = current.children[0];
-  } else if (key === "ArrowLeft") {
-    if (isRoot) target = current.leftChildren?.[0] || current.children?.[1];
-    else if (current.branchDirection === "left" && current.children?.length > 0 && !current.collapsed) target = current.children[0];
-    else target = parent;
-  } else if (key === "ArrowDown") {
-    if (isRoot && structure === "org-down") target = current.children?.[0];
-    else if (parent?.children) {
-      const idx = parent.children.findIndex(c => c.id === current.id);
-      if (idx >= 0 && idx < parent.children.length - 1) target = parent.children[idx + 1];
-    }
-  } else if (key === "ArrowUp") {
-    if (structure === "org-down" && !isRoot) target = parent;
-    else if (parent?.children) {
-      const idx = parent.children.findIndex(c => c.id === current.id);
-      if (idx > 0) target = parent.children[idx - 1];
-    }
-  }
-
-  if (target) {
-    state.selectedIds = new Set([target.id]);
-    renderApp();
-    locateFocusedNode(target.id, true);
-  }
-}
-
-export function initEventListeners(renderApp) {
-  const vp = document.getElementById("viewport");
-  const marquee = document.getElementById("marquee-box");
-  let isPanning = false, panStart = { x: 0, y: 0 }, lastPan = { x: 0, y: 0, t: 0 }, panVel = { x: 0, y: 0 };
-  let isMarquee = false, marqueeStart = { x: 0, y: 0 };
-
-  vp?.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".svg-node, .svg-badge, .canvas-floating-controls, .minimap-widget, .inline-editor")) return;
-    if (e.shiftKey) {
-      isMarquee = true;
-      const rect = vp.getBoundingClientRect();
-      marqueeStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      if (marquee) {
-        marquee.style.left = `${marqueeStart.x}px`; marquee.style.top = `${marqueeStart.y}px`;
-        marquee.style.width = "0px"; marquee.style.height = "0px";
-        marquee.classList.remove("hidden");
-      }
-      return;
-    }
-    stopAllCameraAnimations();
-    isPanning = true;
-    panVel = { x: 0, y: 0 };
-    panStart = { x: e.clientX - camera.transform.x, y: e.clientY - camera.transform.y };
-    lastPan = { x: e.clientX, y: e.clientY, t: performance.now() };
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (isPanning) {
-      const now = performance.now(), dt = now - lastPan.t;
-      if (dt > 10) {
-        panVel = { x: (e.clientX - lastPan.x) / dt, y: (e.clientY - lastPan.y) / dt };
-        lastPan = { x: e.clientX, y: e.clientY, t: now };
-      }
-      camera.transform.x = e.clientX - panStart.x;
-      camera.transform.y = e.clientY - panStart.y;
-      requestTransformUpdate();
-    } else if (isMarquee && marquee) {
-      const rect = vp.getBoundingClientRect();
-      const curX = e.clientX - rect.left, curY = e.clientY - rect.top;
-      const minX = Math.min(curX, marqueeStart.x), maxX = Math.max(curX, marqueeStart.x);
-      const minY = Math.min(curY, marqueeStart.y), maxY = Math.max(curY, marqueeStart.y);
-      marquee.style.left = `${minX}px`; marquee.style.top = `${minY}px`;
-      marquee.style.width = `${maxX - minX}px`; marquee.style.height = `${maxY - minY}px`;
-
-      const sel = new Set();
-      document.querySelectorAll(".svg-node").forEach(el => {
-        const nr = el.getBoundingClientRect(), nrx = nr.left - rect.left, nry = nr.top - rect.top;
-        if (nrx >= minX && nrx + nr.width <= maxX && nry >= minY && nry + nr.height <= maxY) sel.add(el.dataset.id);
-      });
-      if (sel.size > 0) { state.selectedIds = sel; renderApp(); }
-    }
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (isPanning && (Math.abs(panVel.x) > 0.3 || Math.abs(panVel.y) > 0.3)) startInertiaMomentum(panVel.x, panVel.y);
-    isPanning = false;
-    if (isMarquee) { isMarquee = false; marquee?.classList.add("hidden"); }
-  });
-
-  vp?.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.08 : 0.92;
-    const rect = vp.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const newScale = Math.min(3.0, Math.max(0.15, camera.transform.scale * factor));
-    camera.transform.x = mx - (mx - camera.transform.x) * (newScale / camera.transform.scale);
-    camera.transform.y = my - (my - camera.transform.y) * (newScale / camera.transform.scale);
-    camera.transform.scale = newScale;
-    requestTransformUpdate();
-    const zt = document.getElementById("txt-zoom-level");
-    if (zt) zt.innerText = `${Math.round(newScale * 100)}%`;
-  }, { passive: false });
-
-  function markDirtyAndRefresh() {
-    const tab = getActiveTab();
-    if (tab) tab.isDirty = true;
-    saveSnapshot();
-    renderApp();
-  }
-
-  function addChildNode() {
-    const p = getPrimarySelectedNode(); if (!p) return;
-    const child = { id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4), text: "新分支", collapsed: false, children: [] };
-    if (!p.children) p.children = [];
-    p.children.push(child); p.collapsed = false;
-    state.selectedIds = new Set([child.id]);
-    markDirtyAndRefresh();
-    locateFocusedNode(child.id, true);
-  }
-
-  function addSiblingNode() {
-    const p = getPrimarySelectedNode();
-    if (!p || p.id === state.focusedRootId) return addChildNode();
-    const parent = findParent(p.id, state.mindData); if (!parent) return;
-    const sib = { id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4), text: "新主题", collapsed: false, children: [] };
-    const idx = parent.children.findIndex(c => c.id === p.id);
-    parent.children.splice(idx + 1, 0, sib);
-    state.selectedIds = new Set([sib.id]);
-    markDirtyAndRefresh();
-    locateFocusedNode(sib.id, true);
-  }
-
-  function deleteSelectedNodes() {
-    if (!state.selectedIds || state.selectedIds.size === 0) return;
-    let fallbackId = state.focusedRootId;
-    state.selectedIds.forEach(id => {
-      if (id === state.focusedRootId) return;
-      const parent = findParent(id, state.mindData);
-      if (parent) { parent.children = parent.children.filter(c => c.id !== id); fallbackId = parent.id; }
-    });
-    state.selectedIds = new Set([fallbackId]);
-    markDirtyAndRefresh();
-  }
-
-  document.getElementById("btn-add-child")?.addEventListener("click", addChildNode);
-  document.getElementById("btn-add-sibling")?.addEventListener("click", addSiblingNode);
-  document.getElementById("btn-delete")?.addEventListener("click", deleteSelectedNodes);
-  document.getElementById("btn-undo")?.addEventListener("click", () => undo(renderApp));
-  document.getElementById("btn-redo")?.addEventListener("click", () => redo(renderApp));
-  document.getElementById("btn-node-note")?.addEventListener("click", () => openNotesDrawer());
-
-  document.getElementById("btn-toggle-format")?.addEventListener("click", () => {
-    const fs = document.getElementById("format-sidebar");
-    fs?.classList.toggle("collapsed");
-    document.getElementById("btn-toggle-format")?.classList.toggle("active", !fs?.classList.contains("collapsed"));
-  });
-  document.getElementById("btn-close-format")?.addEventListener("click", () => {
-    document.getElementById("format-sidebar")?.classList.add("collapsed");
-    document.getElementById("btn-toggle-format")?.classList.remove("active");
-  });
-
-  document.querySelectorAll("#menu-structures .struct-card").forEach(c => {
-    c.onclick = () => {
-      const t = getActiveTab();
-      if (t) { t.layoutStructure = c.dataset.structure; markDirtyAndRefresh(); syncInspectorUi(); }
-    };
-  });
-  document.querySelectorAll("#palette-options-grid .palette-chip").forEach(c => {
-    c.onclick = () => {
-      const t = getActiveTab();
-      if (t) { t.colorPalette = c.dataset.palette; markDirtyAndRefresh(); syncInspectorUi(); }
-    };
-  });
-  document.querySelectorAll("#line-style-options .style-btn").forEach(b => {
-    b.onclick = () => {
-      const t = getActiveTab();
-      if (t) { t.lineStyle = b.dataset.line; markDirtyAndRefresh(); syncInspectorUi(); }
-    };
-  });
-  document.querySelectorAll("#box-style-options .style-btn").forEach(b => {
-    b.onclick = () => {
-      const t = getActiveTab();
-      if (t) { t.boxStyle = b.dataset.box; markDirtyAndRefresh(); syncInspectorUi(); }
-    };
-  });
-  document.querySelectorAll("#menu-bg-colors .bg-color-swatch").forEach(c => {
-    c.onclick = () => {
-      const t = getActiveTab();
-      if (t) { t.canvasBgColor = c.dataset.color; markDirtyAndRefresh(); applyCanvasThemeToBody(t.canvasBgColor, t.canvasBgPattern); syncInspectorUi(); }
-    };
-  });
-  document.querySelectorAll("#menu-bg-patterns .bg-pattern-card").forEach(b => {
-    b.onclick = () => {
-      const t = getActiveTab();
-      if (t) { t.canvasBgPattern = b.dataset.pattern; markDirtyAndRefresh(); applyCanvasThemeToBody(t.canvasBgColor, t.canvasBgPattern); syncInspectorUi(); }
-    };
-  });
-
-  document.getElementById("btn-zoom-in")?.addEventListener("click", () => { camera.transform.scale = Math.min(3.0, camera.transform.scale * 1.2); requestTransformUpdate(); });
-  document.getElementById("btn-zoom-out")?.addEventListener("click", () => { camera.transform.scale = Math.max(0.2, camera.transform.scale / 1.2); requestTransformUpdate(); });
-  document.getElementById("txt-zoom-level")?.addEventListener("click", () => { camera.transform.scale = 1.0; requestTransformUpdate(); });
-  document.getElementById("btn-smart-center")?.addEventListener("click", () => smartCenterOnSelectedNode(state, true));
-
-  async function performSave() {
-    let tab = getActiveTab();
-    if (!tab || !tab.isDirty) return;
-
-    const pkg = await serializeTabToPackage(tab);
-    const contentStr = JSON.stringify(pkg.filePackage, null, 2);
-
     const savedPath = await callTauri("save_mindmap_file", {
       path: tab.filePath || null,
       defaultName: pkg.filenameWithExt,
       content: contentStr
     });
+    if (!savedPath || savedPath === "CANCELLED") return;
 
-    if (savedPath) {
-      if (savedPath === "CANCELLED") return;
-      tab.filePath = savedPath;
-      tab.title = savedPath.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "");
-    }
+    tab.filePath = savedPath;
+    tab.title = savedPath.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "");
+    tab.isDirty = false;
+
+    recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, {
+      colorPalette: tab.colorPalette,
+      lineStyle: tab.lineStyle,
+      boxStyle: tab.boxStyle,
+      canvasBgColor: tab.canvasBgColor,
+      canvasBgPattern: tab.canvasBgPattern
+    }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault, tab.camera);
+
+    bus.emit(EVENTS.RENDER_APP);
+    showToast(tab.isEncrypted ? "🛡️ 「" + tab.title + "」已加密保存" : "💾 「" + tab.title + "」已保存");
+  } catch {
+    const blob = new Blob([contentStr], { type: "application/json;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = pkg.filenameWithExt;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
 
     tab.isDirty = false;
     recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, {
@@ -258,142 +195,448 @@ export function initEventListeners(renderApp) {
       boxStyle: tab.boxStyle,
       canvasBgColor: tab.canvasBgColor,
       canvasBgPattern: tab.canvasBgPattern
-    }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault);
-    renderApp();
-    const displayFileName = tab.filePath ? tab.filePath.split(/[\\/]/).pop() : (pkg.presetFilename + ".ymind");
-    showToast(tab.isEncrypted ? `🛡️ 「${displayFileName}」已安全加密保存` : `💾 「${displayFileName}」保存成功`);
+    }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault, tab.camera);
+
+    bus.emit(EVENTS.RENDER_APP);
+    showToast("💾 文件已下载保存为: " + pkg.filenameWithExt);
   }
+}
 
-  async function triggerOpenFile() {
-    const tauriResult = await callTauri("open_mindmap_file", {});
-    if (tauriResult) {
-      const [filePath, contentStr] = tauriResult;
-      let parsed = null;
-      try { parsed = JSON.parse(contentStr); }
-      catch { parsed = { title: filePath.split(/[\\/]/).pop().replace(/\.[^/.]+$/, ""), mindData: parseTextToTree(contentStr) }; }
+function initNodeAttributeEvents(renderApp) {
+  const btnAttr = document.getElementById("btn-node-attributes");
+  const wrapper = btnAttr?.closest(".dropdown-wrapper");
 
-      let tab = getActiveTab() || createNewTab();
-      const res = deserializePackage(parsed, "本地白板", filePath);
-      
-      tab.filePath = filePath;
-      tab.title = res.fileDisplayName;
-      tab.layoutStructure = res.loadedLayout;
-      tab.colorPalette = res.loadedPalette;
-      tab.lineStyle = res.loadedLine;
-      tab.boxStyle = res.loadedBox;
-      tab.canvasBgColor = res.loadedBgColor;
-      tab.canvasBgPattern = res.loadedBgPattern;
-      tab.isDirty = false;
-
-      if (res.isEncrypted) {
-        tab.isEncrypted = true;
-        tab.encryptedVault = res.encryptedVault;
-        tab.mindData = { id: "root", text: "🔒 " + tab.title, children: [] };
-        tab._isLocked = true;
-        showLockScreen(tab);
-        showToast("🔒 此文件已受加密保护，请输入密码解锁");
-      } else {
-        tab.isEncrypted = false;
-        tab.encryptedVault = null;
-        tab.mindData = res.loadedMindData;
-        tab.selectedIds = new Set([tab.mindData.id || "root"]);
-        tab.focusedRootId = tab.mindData.id || "root";
-        showToast(`📂 已打开: ${tab.title}`);
-      }
-
-      applyCanvasThemeToBody(tab.canvasBgColor, tab.canvasBgPattern);
-      syncInspectorUi();
-      updateSecurityDockStatus();
-
-      if (window.__SHOW_WORKSPACE__) window.__SHOW_WORKSPACE__();
-      else renderApp();
-    }
-  }
-
-  document.getElementById("btn-save")?.addEventListener("click", performSave);
-  document.getElementById("btn-open")?.addEventListener("click", triggerOpenFile);
-  document.getElementById("nav-btn-open-file")?.addEventListener("click", triggerOpenFile);
-
-  window.addEventListener("keydown", async (e) => {
-    if (e.target.closest("input, textarea, select, [contenteditable=true]") || e.target.isContentEditable || state.editingNodeId) return;
-
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-      e.preventDefault();
-      handleArrowNavigation(e.key, renderApp);
-      return;
-    }
-
-    const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-    const cmd = isMac ? e.metaKey : e.ctrlKey;
-    if (cmd && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redo(renderApp); else undo(renderApp); }
-    else if (cmd && e.key.toLowerCase() === "y") { e.preventDefault(); redo(renderApp); }
-    else if (cmd && e.key.toLowerCase() === "s") { e.preventDefault(); performSave(); }
-    else if (cmd && e.key.toLowerCase() === "o") { e.preventDefault(); triggerOpenFile(); }
-    // 🌟 快捷键 ⌘W / Ctrl+W 关闭标签，触发未保存确认
-    else if (cmd && e.key.toLowerCase() === "w") {
-      e.preventDefault();
-      const curTab = getActiveTab();
-      if (curTab) {
-        await closeTabWithConfirm(curTab.id, renderApp, window.__SHOW_HOME__ || (() => {}));
-      }
-    }
-    else if (e.altKey && e.key.toLowerCase() === "l") {
-      e.preventDefault();
-      const tab = getActiveTab();
-      if (tab?.isEncrypted) lockCurrentTab();
-      else openVaultSetModal();
-    }
-    else if (e.key === "Tab") { e.preventDefault(); addChildNode(); }
-    else if (e.key === "Enter") { e.preventDefault(); addSiblingNode(); }
-    else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelectedNodes(); }
+  btnAttr?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    wrapper?.classList.toggle("active");
   });
 
-  // 标签管理模态框
+  window.addEventListener("click", (e) => {
+    if (wrapper && !wrapper.contains(e.target)) wrapper.classList.remove("active");
+  });
+
+  document.querySelectorAll("[data-quick-icon]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      wrapper?.classList.remove("active");
+      const icon = chip.dataset.quickIcon;
+      const target = getPrimarySelectedNode();
+      if (!target) return;
+      target.icon = (target.icon === icon) ? null : icon;
+      markDirtyAndRefresh(renderApp);
+    });
+  });
+
+  document.getElementById("btn-open-full-icons")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    wrapper?.classList.remove("active");
+    const fs = document.getElementById("format-sidebar");
+    const layout = document.querySelector(".workspace-body-layout");
+    fs?.classList.remove("collapsed");
+    document.getElementById("btn-toggle-format")?.classList.add("active");
+    layout?.classList.add("sidebar-open");
+    const iconSec = document.querySelector('.inspector-accordion-item[data-section="icons"]');
+    if (iconSec) {
+      iconSec.classList.add("open");
+      iconSec.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+
+  document.querySelectorAll("#menu-priority .popover-item").forEach(item => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      wrapper?.classList.remove("active");
+      const p = item.dataset.priority;
+      const target = getPrimarySelectedNode();
+      if (!target) return;
+      target.priority = (p === "none") ? null : p;
+      markDirtyAndRefresh(renderApp);
+    });
+  });
+
+  document.querySelectorAll("#menu-progress .popover-item").forEach(item => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      wrapper?.classList.remove("active");
+      const prg = item.dataset.progress;
+      const target = getPrimarySelectedNode();
+      if (!target) return;
+      target.progress = (prg === "none") ? null : prg;
+      markDirtyAndRefresh(renderApp);
+    });
+  });
+
   const tagModal = document.getElementById("apple-modal-overlay");
+  const tagList = document.getElementById("modal-tags-list");
   const tagInput = document.getElementById("modal-input");
-  const tagsListDom = document.getElementById("modal-tags-list");
-  
-  function renderTagsList(node) {
-    if (!tagsListDom || !node) return;
-    tagsListDom.innerHTML = (node.tags || []).map((t, idx) => `
-      <span class="apple-tag p3" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;margin:2px;cursor:pointer;" data-idx="${idx}">
-        ${t} <span style="font-weight:bold;">×</span>
+  const btnTagCancel = document.getElementById("modal-btn-cancel");
+  const btnTagConfirm = document.getElementById("modal-btn-confirm");
+
+  function renderTagModalList(node) {
+    if (!tagList) return;
+    const tags = Array.isArray(node.tags) ? node.tags : [];
+    tagList.innerHTML = tags.map(t => `
+      <span class="apple-modal-tag">
+        <span>${t}</span>
+        <span class="tag-del-btn" data-tag="${t}" style="cursor:pointer;font-weight:700;">×</span>
       </span>
     `).join("");
-    tagsListDom.querySelectorAll("span.apple-tag").forEach(el => {
-      el.onclick = () => {
-        const idx = parseInt(el.dataset.idx, 10);
-        node.tags.splice(idx, 1);
-        renderTagsList(node);
-        markDirtyAndRefresh();
+
+    tagList.querySelectorAll(".tag-del-btn").forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        node.tags = (node.tags || []).filter(item => item !== btn.dataset.tag);
+        renderTagModalList(node);
+        markDirtyAndRefresh(renderApp);
       };
     });
   }
 
-  document.getElementById("btn-open-tag-modal")?.addEventListener("click", () => {
-    const p = getPrimarySelectedNode();
-    if (!p || !tagModal) return;
-    renderTagsList(p);
-    tagModal.classList.remove("hidden");
-    if (tagInput) { tagInput.value = ""; tagInput.focus(); }
+  function addCurrentInputTag(node) {
+    if (!tagInput) return;
+    const val = tagInput.value.trim();
+    if (!val) return;
+    if (!Array.isArray(node.tags)) node.tags = [];
+    if (!node.tags.includes(val)) {
+      node.tags.push(val);
+      renderTagModalList(node);
+      markDirtyAndRefresh(renderApp);
+    }
+    tagInput.value = "";
+    tagInput.focus();
+  }
+
+  document.getElementById("btn-open-tag-modal")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    wrapper?.classList.remove("active");
+    const node = getPrimarySelectedNode();
+    if (!node) return;
+    renderTagModalList(node);
+    if (tagInput) tagInput.value = "";
+    tagModal?.classList.remove("hidden");
+    tagInput?.focus();
   });
 
-  function addTagFromInput() {
-    const p = getPrimarySelectedNode();
-    const val = tagInput?.value.trim();
-    if (p && val) {
-      if (!p.tags) p.tags = [];
-      if (!p.tags.includes(val)) p.tags.push(val);
-      if (tagInput) tagInput.value = "";
-      renderTagsList(p);
-      markDirtyAndRefresh();
+  btnTagCancel?.addEventListener("click", () => tagModal?.classList.add("hidden"));
+  btnTagConfirm?.addEventListener("click", () => {
+    const node = getPrimarySelectedNode();
+    if (node) addCurrentInputTag(node);
+  });
+  tagInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const node = getPrimarySelectedNode();
+      if (node) addCurrentInputTag(node);
+    } else if (e.key === "Escape") {
+      tagModal?.classList.add("hidden");
+    }
+  });
+}
+
+export function initEventListeners(renderApp) {
+  const vp = document.getElementById("viewport");
+  const marquee = document.getElementById("marquee-box");
+  let isPanning = false, panStart = { x: 0, y: 0 };
+  let lastMoveTime = 0, lastClientX = 0, lastClientY = 0;
+  let panVel = { x: 0, y: 0 };
+  let isMarquee = false, marqueeStart = { x: 0, y: 0 };
+  let lastClickTime = 0, lastClickNodeId = null;
+
+  vp?.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".canvas-floating-controls, .minimap-widget, .inline-editor")) return;
+    const rect = vp.getBoundingClientRect();
+    const clickScreenX = e.clientX - rect.left;
+    const clickScreenY = e.clientY - rect.top;
+    const s = camera.transform.scale;
+    const worldX = (clickScreenX - camera.transform.x) / s;
+    const worldY = (clickScreenY - camera.transform.y) / s;
+
+    const curTab = getActiveTab();
+    const curRoot = findNode(state.focusedRootId, state.mindData) || state.mindData;
+    const isVisible = (id) => isNodeVisibleInTree(id, curRoot);
+
+    let badgeNode = curTab?.spatialIndex?.pickCollapseBadge(worldX, worldY, state.focusedRootId, isVisible);
+    if (!badgeNode) badgeNode = fallbackPickBadge(worldX, worldY);
+    if (badgeNode) {
+      e.stopPropagation();
+      badgeNode.collapsed = !badgeNode.collapsed;
+      state.isLayoutDirty = true;
+      saveSnapshot();
+      curTab?.spatialIndex?.clear();
+      bus.emit(EVENTS.RENDER_APP);
+      return;
+    }
+
+    let node = curTab?.spatialIndex?.pickNode(worldX, worldY, 8, isVisible);
+    if (!node) node = fallbackPickNode(worldX, worldY, 8);
+
+    if (node) {
+      e.stopPropagation();
+      if (state.isRecallMode && node.id !== state.focusedRootId) {
+        peekTargetNode = node;
+        node._unmasked = true;
+        bus.emit(EVENTS.RENDER_APP);
+        return;
+      }
+      const now = Date.now();
+      if (now - lastClickTime < 350 && lastClickNodeId === node.id) {
+        lastClickTime = 0; lastClickNodeId = null;
+        startEditNode(node, state, renderApp, false);
+        return;
+      }
+      lastClickTime = now;
+      lastClickNodeId = node.id;
+
+      // 🌟 Shift+点击：支持多选追加/反选
+      if (e.shiftKey) {
+        const nextSet = new Set(state.selectedIds);
+        if (nextSet.has(node.id)) nextSet.delete(node.id);
+        else nextSet.add(node.id);
+        state.selectedIds = nextSet;
+      } else {
+        state.selectedIds = new Set([node.id]);
+      }
+
+      bus.emit(EVENTS.RENDER_APP);
+      syncInspectorUi();
+      locateFocusedNode(node.id, true);
+      return;
+    }
+
+    // 🌟 按住 Shift 且点击空白区域：进入框选模式
+    if (e.shiftKey) {
+      isMarquee = true;
+      marqueeStart = { x: clickScreenX, y: clickScreenY };
+      if (marquee) {
+        marquee.style.left = marqueeStart.x + "px";
+        marquee.style.top = marqueeStart.y + "px";
+        marquee.style.width = "0px";
+        marquee.style.height = "0px";
+        marquee.classList.remove("hidden");
+      }
+      return;
+    }
+
+    stopAllCameraAnimations();
+    isPanning = true;
+    state.isInteracting = true;
+    panVel = { x: 0, y: 0 };
+    lastClientX = e.clientX;
+    lastClientY = e.clientY;
+    lastMoveTime = performance.now();
+    panStart = { x: e.clientX - camera.transform.x, y: e.clientY - camera.transform.y };
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!vp) return;
+    const rect = vp.getBoundingClientRect();
+    const curTab = getActiveTab();
+    const curRoot = findNode(state.focusedRootId, state.mindData) || state.mindData;
+    const isVisible = (id) => isNodeVisibleInTree(id, curRoot);
+
+    if (!isPanning && !isMarquee) {
+      const s = camera.transform.scale;
+      const wx = (e.clientX - rect.left - camera.transform.x) / s;
+      const wy = (e.clientY - rect.top - camera.transform.y) / s;
+      let badgeHit = curTab?.spatialIndex?.pickCollapseBadge(wx, wy, state.focusedRootId, isVisible);
+      if (!badgeHit) badgeHit = fallbackPickBadge(wx, wy);
+      let nodeHit = badgeHit || curTab?.spatialIndex?.pickNode(wx, wy, 8, isVisible);
+      if (!nodeHit) nodeHit = fallbackPickNode(wx, wy, 8);
+
+      if (e.shiftKey) {
+        vp.style.cursor = nodeHit ? "pointer" : "crosshair";
+      } else {
+        vp.style.cursor = badgeHit ? "pointer" : (nodeHit ? "pointer" : "grab");
+      }
+    }
+
+    if (isPanning) {
+      vp.style.cursor = "grabbing";
+      const now = performance.now();
+      const dt = now - lastMoveTime;
+      if (dt > 10) {
+        panVel = { x: (e.clientX - lastClientX) / dt, y: (e.clientY - lastClientY) / dt };
+        lastClientX = e.clientX;
+        lastClientY = e.clientY;
+        lastMoveTime = now;
+      }
+      camera.transform.x = e.clientX - panStart.x;
+      camera.transform.y = e.clientY - panStart.y;
+      requestTransformUpdate();
+    } else if (isMarquee && marquee) {
+      const curX = e.clientX - rect.left, curY = e.clientY - rect.top;
+      const minX = Math.min(curX, marqueeStart.x), maxX = Math.max(curX, marqueeStart.x);
+      const minY = Math.min(curY, marqueeStart.y), maxY = Math.max(curY, marqueeStart.y);
+      marquee.style.left = minX + "px";
+      marquee.style.top = minY + "px";
+      marquee.style.width = Math.max(1, maxX - minX) + "px";
+      marquee.style.height = Math.max(1, maxY - minY) + "px";
+
+      // 🌟 执行稳定直接的 AABB 几何相交计算
+      const hitIds = computeDirectMarquee(minX, maxX, minY, maxY);
+
+      const isSame = hitIds.size === state.selectedIds.size && [...hitIds].every(id => state.selectedIds.has(id));
+      if (!isSame) {
+        state.selectedIds = hitIds;
+        bus.emit(EVENTS.RENDER_APP);
+      }
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (state.isRecallMode && peekTargetNode) {
+      peekTargetNode._unmasked = false;
+      peekTargetNode = null;
+      bus.emit(EVENTS.RENDER_APP);
+    }
+    if (isPanning) {
+      const timeSinceLastMove = performance.now() - lastMoveTime;
+      if (timeSinceLastMove < 45 && (Math.abs(panVel.x) > 0.12 || Math.abs(panVel.y) > 0.12)) {
+        startInertiaMomentum(panVel.x * 1.5, panVel.y * 1.5);
+      } else {
+        state.isInteracting = false;
+        requestTransformUpdate();
+      }
+      const curTab = getActiveTab();
+      if (curTab) curTab.camera = { ...camera.transform };
+    }
+    isPanning = false;
+
+    if (isMarquee) {
+      isMarquee = false;
+      if (marquee) {
+        marquee.classList.add("hidden");
+        marquee.style.width = "0px";
+        marquee.style.height = "0px";
+      }
+      syncInspectorUi();
+    }
+  });
+
+  vp?.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    stopAllCameraAnimations();
+    state.isInteracting = true;
+    if (state.editingNodeId) document.getElementById("inline-editor")?.blur();
+
+    const rect = vp.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (e.shiftKey) { camera.transform.x -= (e.deltaY || e.deltaX); requestTransformUpdate(); return; }
+    if (e.altKey) { camera.transform.y -= e.deltaY; requestTransformUpdate(); return; }
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2 && Math.abs(e.deltaX) > 1) {
+      camera.transform.x -= e.deltaX; requestTransformUpdate(); return;
+    }
+
+    let rawDelta = e.deltaY;
+    if (e.deltaMode === 1) rawDelta *= 30;
+    else if (e.deltaMode === 2) rawDelta *= 100;
+
+    const clampedDelta = Math.max(-100, Math.min(100, rawDelta));
+    const zoomFactor = Math.exp(-clampedDelta * 0.001);
+    const oldScale = camera.transform.scale;
+    let newScale = Math.max(0.15, Math.min(3.0, oldScale * zoomFactor));
+
+    if (Math.abs(newScale - oldScale) < 0.0001) return;
+    const scaleRatio = newScale / oldScale;
+    camera.transform.x = mx - (mx - camera.transform.x) * scaleRatio;
+    camera.transform.y = my - (my - camera.transform.y) * scaleRatio;
+    camera.transform.scale = newScale;
+
+    const curTab = getActiveTab();
+    if (curTab) curTab.camera = { ...camera.transform };
+    requestTransformUpdate();
+
+    clearTimeout(window.__ZOOM_REST_TIMER__);
+    window.__ZOOM_REST_TIMER__ = setTimeout(() => {
+      state.isInteracting = false;
+      requestTransformUpdate();
+    }, 120);
+  }, { passive: false });
+
+  document.getElementById("btn-add-child")?.addEventListener("click", () => addChildNode(renderApp));
+  document.getElementById("btn-add-sibling")?.addEventListener("click", () => addSiblingNode(renderApp));
+  document.getElementById("btn-delete")?.addEventListener("click", () => deleteSelectedNodes(renderApp));
+  document.getElementById("btn-undo")?.addEventListener("click", () => undo(renderApp));
+  document.getElementById("btn-redo")?.addEventListener("click", () => redo(renderApp));
+  document.getElementById("btn-node-note")?.addEventListener("click", () => openNotesDrawer());
+
+  document.getElementById("btn-toggle-format")?.addEventListener("click", () => {
+    const fs = document.getElementById("format-sidebar");
+    const layout = document.querySelector(".workspace-body-layout");
+    fs?.classList.toggle("collapsed");
+    const isExpanded = !fs?.classList.contains("collapsed");
+    document.getElementById("btn-toggle-format")?.classList.toggle("active", isExpanded);
+    layout?.classList.toggle("sidebar-open", isExpanded);
+  });
+  document.getElementById("btn-close-format")?.addEventListener("click", () => {
+    const fs = document.getElementById("format-sidebar");
+    const layout = document.querySelector(".workspace-body-layout");
+    fs?.classList.add("collapsed");
+    document.getElementById("btn-toggle-format")?.classList.remove("active");
+    layout?.classList.remove("sidebar-open");
+  });
+
+  function zoomViewportCenter(factor) {
+    stopAllCameraAnimations();
+    const cx = (vp?.clientWidth || window.innerWidth) / 2;
+    const cy = (vp?.clientHeight || window.innerHeight) / 2;
+    const oldScale = camera.transform.scale;
+    const newScale = Math.min(3.0, Math.max(0.15, oldScale * factor));
+    camera.transform.x = cx - (cx - camera.transform.x) * (newScale / oldScale);
+    camera.transform.y = cy - (cy - camera.transform.y) * (newScale / oldScale);
+    camera.transform.scale = newScale;
+    const curTab = getActiveTab();
+    if (curTab) curTab.camera = { ...camera.transform };
+    requestTransformUpdate();
+  }
+
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => zoomViewportCenter(1.15));
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => zoomViewportCenter(1 / 1.15));
+  document.getElementById("txt-zoom-level")?.addEventListener("click", () => {
+    const cx = (vp?.clientWidth || window.innerWidth) / 2;
+    const cy = (vp?.clientHeight || window.innerHeight) / 2;
+    const oldScale = camera.transform.scale;
+    camera.transform.x = cx - (cx - camera.transform.x) * (1.0 / oldScale);
+    camera.transform.y = cy - (cy - camera.transform.y) * (1.0 / oldScale);
+    camera.transform.scale = 1.0;
+    const curTab = getActiveTab();
+    if (curTab) curTab.camera = { ...camera.transform };
+    requestTransformUpdate();
+  });
+
+  async function triggerOpenFile() {
+    try {
+      const tauriResult = await callTauri("open_mindmap_file", {});
+      if (!tauriResult || tauriResult === "CANCELLED") return;
+      const [filePath, contentStr] = tauriResult;
+      await handleLoadedFileContent(contentStr, filePath, renderApp);
+    } catch {
+      const fileInput = document.getElementById("global-file-input");
+      if (!fileInput) return;
+      fileInput.value = "";
+      fileInput.onchange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const isXMind = file.name.endsWith(".xmind");
+        const reader = new FileReader();
+        if (isXMind) {
+          reader.onload = async (ev) => await handleLoadedFileContent(ev.target.result, file.name, renderApp);
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.onload = async (ev) => await handleLoadedFileContent(ev.target.result, file.name, renderApp);
+          reader.readAsText(file);
+        }
+      };
+      fileInput.click();
     }
   }
 
-  document.getElementById("modal-btn-confirm")?.addEventListener("click", addTagFromInput);
-  tagInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); addTagFromInput(); }
-    else if (e.key === "Escape") { tagModal?.classList.add("hidden"); }
-  });
-  document.getElementById("modal-btn-cancel")?.addEventListener("click", () => tagModal?.classList.add("hidden"));
+  document.getElementById("btn-save")?.addEventListener("click", () => performSave());
+  document.getElementById("btn-open")?.addEventListener("click", triggerOpenFile);
+  document.getElementById("nav-btn-open-file")?.addEventListener("click", triggerOpenFile);
+
+  initNodeAttributeEvents(renderApp);
+  bindGlobalShortcuts(renderApp, performSave, triggerOpenFile);
 }

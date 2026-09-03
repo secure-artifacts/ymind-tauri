@@ -1,73 +1,114 @@
 #svg-infinite-bg { fill: transparent !important; }
 #viewport {
   background-color: var(--canvas-bg, #f8fafc) !important;
-  transition: background-color 0.2s ease, background-image 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
-/* 🎨 11 款精研底色系统 */
+/* 🎨 15 款精研底色系统 */
 #viewport.bg-color-studio-white, body[data-bg-color="studio-white"] #viewport {
-  --canvas-bg: #f8fafc; --pattern-color: #94a3b8; --pattern-line: rgba(148, 163, 184, 0.42);
+  --canvas-bg: #f8fafc; --pattern-color: rgba(148, 163, 184, 0.32); --pattern-line: rgba(148, 163, 184, 0.32);
 }
 #viewport.bg-color-warm-ivory, body[data-bg-color="warm-ivory"] #viewport {
-  --canvas-bg: #faf6ed; --pattern-color: #b4846c; --pattern-line: rgba(180, 132, 108, 0.38);
+  --canvas-bg: #faf6ed; --pattern-color: rgba(180, 132, 108, 0.28); --pattern-line: rgba(180, 132, 108, 0.28);
 }
 #viewport.bg-color-vintage-parchment, body[data-bg-color="vintage-parchment"] #viewport {
-  --canvas-bg: #f4eedb; --pattern-color: #a67c52; --pattern-line: rgba(166, 124, 82, 0.38);
+  --canvas-bg: #f4eedb; --pattern-color: rgba(166, 124, 82, 0.28); --pattern-line: rgba(166, 124, 82, 0.28);
 }
 #viewport.bg-color-matcha-mist, body[data-bg-color="matcha-mist"] #viewport {
-  --canvas-bg: #f1f7f2; --pattern-color: #4e8752; --pattern-line: rgba(78, 135, 82, 0.38);
+  --canvas-bg: #f1f7f2; --pattern-color: rgba(78, 135, 82, 0.28); --pattern-line: rgba(78, 135, 82, 0.28);
 }
 #viewport.bg-color-lavender-fog, body[data-bg-color="lavender-fog"] #viewport {
-  --canvas-bg: #f7f4fb; --pattern-color: #9d72c4; --pattern-line: rgba(157, 114, 196, 0.38);
+  --canvas-bg: #f7f4fb; --pattern-color: rgba(157, 114, 196, 0.28); --pattern-line: rgba(157, 114, 196, 0.28);
 }
 #viewport.bg-color-glacier-blue, body[data-bg-color="glacier-blue"] #viewport {
-  --canvas-bg: #f0f6fb; --pattern-color: #388ec9; --pattern-line: rgba(56, 142, 201, 0.38);
+  --canvas-bg: #f0f6fb; --pattern-color: rgba(56, 142, 201, 0.28); --pattern-line: rgba(56, 142, 201, 0.28);
 }
 #viewport.bg-color-morandi-stone, body[data-bg-color="morandi-stone"] #viewport {
-  --canvas-bg: #eeedf0; --pattern-color: #788896; --pattern-line: rgba(120, 136, 150, 0.38);
+  --canvas-bg: #eeedf0; --pattern-color: rgba(120, 136, 150, 0.28); --pattern-line: rgba(120, 136, 150, 0.28);
+}
+#viewport.bg-color-sakura-blossom, body[data-bg-color="sakura-blossom"] #viewport {
+  --canvas-bg: #fff5f5; --pattern-color: rgba(244, 114, 182, 0.28); --pattern-line: rgba(244, 114, 182, 0.28);
+}
+#viewport.bg-color-sand-dune, body[data-bg-color="sand-dune"] #viewport {
+  --canvas-bg: #f7f3e8; --pattern-color: rgba(194, 155, 100, 0.28); --pattern-line: rgba(194, 155, 100, 0.28);
 }
 #viewport.bg-color-space-gray, body[data-bg-color="space-gray"] #viewport {
-  --canvas-bg: #181a1f; --pattern-color: rgba(255, 255, 255, 0.35); --pattern-line: rgba(255, 255, 255, 0.16);
+  --canvas-bg: #181a1f; --pattern-color: rgba(255, 255, 255, 0.24); --pattern-line: rgba(255, 255, 255, 0.12);
 }
 #viewport.bg-color-midnight-abyss, body[data-bg-color="midnight-abyss"] #viewport {
-  --canvas-bg: #09090b; --pattern-color: rgba(255, 255, 255, 0.28); --pattern-line: rgba(255, 255, 255, 0.14);
+  --canvas-bg: #09090b; --pattern-color: rgba(255, 255, 255, 0.20); --pattern-line: rgba(255, 255, 255, 0.10);
 }
 #viewport.bg-color-prussian-navy, body[data-bg-color="prussian-navy"] #viewport {
-  --canvas-bg: #0c1a2e; --pattern-color: rgba(56, 189, 248, 0.45); --pattern-line: rgba(56, 189, 248, 0.25);
+  --canvas-bg: #0c1a2e; --pattern-color: rgba(56, 189, 248, 0.32); --pattern-line: rgba(56, 189, 248, 0.18);
 }
 #viewport.bg-color-slate-chalkboard, body[data-bg-color="slate-chalkboard"] #viewport {
-  --canvas-bg: #13241b; --pattern-color: rgba(74, 222, 128, 0.42); --pattern-line: rgba(74, 222, 128, 0.22);
+  --canvas-bg: #13241b; --pattern-color: rgba(74, 222, 128, 0.30); --pattern-line: rgba(74, 222, 128, 0.16);
+}
+#viewport.bg-color-cyber-violet, body[data-bg-color="cyber-violet"] #viewport {
+  --canvas-bg: #150e28; --pattern-color: rgba(192, 132, 252, 0.32); --pattern-line: rgba(192, 132, 252, 0.16);
+}
+#viewport.bg-color-obsidian-coffee, body[data-bg-color="obsidian-coffee"] #viewport {
+  --canvas-bg: #1c1614; --pattern-color: rgba(217, 119, 6, 0.30); --pattern-line: rgba(217, 119, 6, 0.16);
 }
 
-/* 🖼 8 款底纹纹理系统 */
+/* 🖼 15 款底纹纹理系统（点阵微调为 1.05px 优雅微颗粒） */
 #viewport.bg-pattern-dots, body[data-bg-pattern="dots"] #viewport {
-  background-image: radial-gradient(var(--pattern-color, #94a3b8) 1.4px, transparent 1.4px) !important;
+  background-image: radial-gradient(var(--pattern-color, rgba(148, 163, 184, 0.30)) 1.05px, transparent 1.05px) !important;
   background-size: 24px 24px !important;
 }
 #viewport.bg-pattern-grid, body[data-bg-pattern="grid"] #viewport {
-  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px) !important;
+  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px) !important;
   background-size: 20px 20px !important;
 }
 #viewport.bg-pattern-isometric, body[data-bg-pattern="isometric"] #viewport {
-  background-image: linear-gradient(30deg, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(150deg, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(90deg, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px) !important;
+  background-image: linear-gradient(30deg, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px), linear-gradient(150deg, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px), linear-gradient(90deg, var(--pattern-line, rgba(148, 163, 184, 0.18)) 1px, transparent 1px) !important;
   background-size: 40px 69.28px !important;
 }
 #viewport.bg-pattern-cross, body[data-bg-pattern="cross"] #viewport {
-  background-image: radial-gradient(var(--pattern-color, #94a3b8) 1.6px, transparent 1.6px), linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px) !important;
+  background-image: radial-gradient(var(--pattern-color, rgba(148, 163, 184, 0.30)) 1.2px, transparent 1.2px), linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px) !important;
   background-size: 32px 32px !important;
   background-position: 16px 16px, 0 0, 0 0 !important;
 }
 #viewport.bg-pattern-lined, body[data-bg-pattern="lined"] #viewport {
-  background-image: linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px) !important;
+  background-image: linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px) !important;
   background-size: 100% 28px !important;
 }
 #viewport.bg-pattern-stripes, body[data-bg-pattern="stripes"] #viewport {
-  background-image: repeating-linear-gradient(45deg, var(--pattern-line, rgba(148, 163, 184, 0.35)), var(--pattern-line, rgba(148, 163, 184, 0.35)) 1px, transparent 1px, transparent 16px) !important;
+  background-image: repeating-linear-gradient(45deg, var(--pattern-line, rgba(148, 163, 184, 0.25)), var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px, transparent 16px) !important;
   background-size: 24px 24px !important;
 }
 #viewport.bg-pattern-blueprint, body[data-bg-pattern="blueprint"] #viewport {
-  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.25)) 1px, transparent 1px), linear-gradient(to right, var(--pattern-color, #94a3b8) 1.5px, transparent 1.5px), linear-gradient(to bottom, var(--pattern-color, #94a3b8) 1.5px, transparent 1.5px) !important;
+  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.18)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.18)) 1px, transparent 1px), linear-gradient(to right, var(--pattern-color, rgba(148, 163, 184, 0.30)) 1.5px, transparent 1.5px), linear-gradient(to bottom, var(--pattern-color, rgba(148, 163, 184, 0.30)) 1.5px, transparent 1.5px) !important;
   background-size: 10px 10px, 10px 10px, 50px 50px, 50px 50px !important;
+}
+#viewport.bg-pattern-diamonds, body[data-bg-pattern="diamonds"] #viewport {
+  background-image: linear-gradient(45deg, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px), linear-gradient(-45deg, var(--pattern-line, rgba(148, 163, 184, 0.26)) 1px, transparent 1px) !important;
+  background-size: 26px 26px !important;
+}
+#viewport.bg-pattern-dots-dense, body[data-bg-pattern="dots-dense"] #viewport {
+  background-image: radial-gradient(var(--pattern-color, rgba(148, 163, 184, 0.28)) 1.0px, transparent 1.0px) !important;
+  background-size: 14px 14px !important;
+}
+#viewport.bg-pattern-music-score, body[data-bg-pattern="music-score"] #viewport {
+  background-image: linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.30)) 1px, transparent 1px, transparent 7px, var(--pattern-line, rgba(148, 163, 184, 0.30)) 7px, transparent 8px) !important;
+  background-size: 100% 32px !important;
+}
+#viewport.bg-pattern-millimeter-graph, body[data-bg-pattern="millimeter-graph"] #viewport {
+  background-image: linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.30)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.30)) 1px, transparent 1px), linear-gradient(to right, var(--pattern-line, rgba(148, 163, 184, 0.14)) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern-line, rgba(148, 163, 184, 0.14)) 1px, transparent 1px) !important;
+  background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px !important;
+}
+#viewport.bg-pattern-zigzag, body[data-bg-pattern="zigzag"] #viewport {
+  background-image: linear-gradient(135deg, var(--pattern-line, rgba(148, 163, 184, 0.22)) 25%, transparent 25%), linear-gradient(225deg, var(--pattern-line, rgba(148, 163, 184, 0.22)) 25%, transparent 25%), linear-gradient(315deg, var(--pattern-line, rgba(148, 163, 184, 0.22)) 25%, transparent 25%), linear-gradient(45deg, var(--pattern-line, rgba(148, 163, 184, 0.22)) 25%, transparent 25%) !important;
+  background-size: 24px 24px !important;
+  background-position: -12px 0, -12px 0, 0 0, 0 0 !important;
+}
+#viewport.bg-pattern-radar-target, body[data-bg-pattern="radar-target"] #viewport {
+  background-image: radial-gradient(circle, transparent 6px, var(--pattern-line, rgba(148, 163, 184, 0.26)) 6.5px, var(--pattern-line, rgba(148, 163, 184, 0.26)) 7.5px, transparent 8px), radial-gradient(var(--pattern-color, rgba(148, 163, 184, 0.30)) 1.2px, transparent 1.2px) !important;
+  background-size: 32px 32px !important;
+}
+#viewport.bg-pattern-honeycomb, body[data-bg-pattern="honeycomb"] #viewport {
+  background-image: radial-gradient(circle farthest-side, transparent 68%, var(--pattern-line, rgba(148, 163, 184, 0.26)) 73%, transparent 78%) !important;
+  background-size: 24px 40px !important;
 }
 #viewport.bg-pattern-none, body[data-bg-pattern="none"] #viewport {
   background-image: none !important;

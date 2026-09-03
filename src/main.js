@@ -1,19 +1,21 @@
 import { state, getActiveTab, createNewTab } from "./js/core/state.js";
-import { render } from "./js/render/render.js";
+import { render, resizeCanvas } from "./js/render/render.js";
 import { renderOutliner } from "./js/render/outliner.js";
-import { camera, requestTransformUpdate, smartCenterOnSelectedNode, locateFocusedNode } from "./js/core/camera.js";
-import { initEventListeners } from "./js/ui/events.js";
+import { camera, requestTransformUpdate, locateFocusedNode } from "./js/core/camera.js";
+import { initEventListeners, updateSelectionOnly } from "./js/ui/events.js";
 import { syncInspectorUi, applyCanvasThemeToBody, initInspectorEvents } from "./js/ui/inspector.js";
-import { renderHomeHub, initHomeEvents, recordRecentDoc } from "./js/ui/home.js";
+import { renderHomeHub, initHomeEvents, recordRecentDoc, switchHomeTab } from "./js/ui/home.js";
 import { renderTabBar, initTabBar } from "./js/core/tab-manager.js";
-import { initNotesDrawer, openNotesDrawer } from "./js/ui/notes.js";
+import { initNotesDrawer } from "./js/ui/notes.js";
 import { initFlashcards, toggleRecallMode, openFlashcardModal } from "./js/ui/flashcards.js";
 import { initVaultManager, showLockScreen, hideLockScreen, updateSecurityDockStatus } from "./js/ui/vault.js";
 import { initContextMenu } from "./js/ui/contextmenu.js";
 import { initSearchEngine } from "./js/ui/search.js";
 import { initIconPicker } from "./js/ui/icon-picker.js";
-import { initAutoSaveEngine, openVersionHistoryModal, closeVersionHistoryModal, clearAllSnapshots, renderHistoryList } from "./js/storage/storage.js";
+import { initAutoSaveEngine, openVersionHistoryModal, closeVersionHistoryModal, clearAllSnapshots, renderHistoryList, createVersionSnapshot } from "./js/storage/storage.js";
 import { initSettingsViewEvents } from "./js/ui/settings.js";
+import { appConfirm, showToast } from "./js/ui/dialog.js";
+import { bus, EVENTS } from "./js/core/event-bus.js";
 
 const homeView = document.getElementById("home-view");
 const workspaceView = document.getElementById("workspace-view");
@@ -22,10 +24,15 @@ export function showWorkspace() {
   if (state.tabs.length === 0) createNewTab();
   if (homeView) homeView.classList.add("hidden");
   if (workspaceView) workspaceView.classList.remove("hidden");
+  document.querySelector(".workspace-body-layout")?.classList.toggle("sidebar-open", !document.getElementById("format-sidebar")?.classList.contains("collapsed"));
 
   const cur = getActiveTab();
   if (cur) {
-    camera.transform = cur.camera;
+    if (cur.camera && cur.camera.scale) {
+      camera.transform.x = cur.camera.x;
+      camera.transform.y = cur.camera.y;
+      camera.transform.scale = cur.camera.scale;
+    }
     applyCanvasThemeToBody(cur.canvasBgColor || "studio-white", cur.canvasBgPattern || "dots");
     if (cur.isEncrypted && cur._isLocked) {
       showLockScreen(cur);
@@ -34,22 +41,25 @@ export function showWorkspace() {
     }
   }
 
+  resizeCanvas();
   renderApp();
-  smartCenterOnSelectedNode(state, false);
   syncInspectorUi();
   updateSecurityDockStatus();
 }
 
 export function showHome() {
   const cur = getActiveTab();
-  if (cur && !cur._isLocked) {
-    recordRecentDoc(cur.title, cur.mindData, cur.layoutStructure, cur.filePath, {
-      colorPalette: cur.colorPalette,
-      lineStyle: cur.lineStyle,
-      boxStyle: cur.boxStyle,
-      canvasBgColor: cur.canvasBgColor,
-      canvasBgPattern: cur.canvasBgPattern
-    }, cur.isEncrypted, cur.password, cur.passwordHint, cur.encryptedVault);
+  if (cur) {
+    cur.camera = { ...camera.transform };
+    if (!cur._isLocked) {
+      recordRecentDoc(cur.title, cur.mindData, cur.layoutStructure, cur.filePath, {
+        colorPalette: cur.colorPalette,
+        lineStyle: cur.lineStyle,
+        boxStyle: cur.boxStyle,
+        canvasBgColor: cur.canvasBgColor,
+        canvasBgPattern: cur.canvasBgPattern
+      }, cur.isEncrypted, cur.password, cur.passwordHint, cur.encryptedVault, cur.camera);
+    }
   }
   hideLockScreen();
   if (workspaceView) workspaceView.classList.add("hidden");
@@ -57,13 +67,10 @@ export function showHome() {
   renderHomeHub(renderApp, showWorkspace);
 }
 
-window.__SHOW_WORKSPACE__ = showWorkspace;
-window.__SHOW_HOME__ = showHome;
-
 function renderApp() {
   if (state.tabs.length === 0) { showHome(); return; }
 
-  renderTabBar(renderApp, showHome);
+  renderTabBar();
 
   const curTab = getActiveTab();
   const viewport = document.getElementById("viewport");
@@ -74,10 +81,6 @@ function renderApp() {
   if (curTab?.isEncrypted && curTab?._isLocked) {
     outlinerView?.classList.add("hidden");
     viewport?.classList.remove("hidden");
-    const layerNodes = document.getElementById("layer-nodes");
-    const layerConns = document.getElementById("layer-connections");
-    if (layerNodes) layerNodes.innerHTML = "";
-    if (layerConns) layerConns.innerHTML = "";
     showLockScreen(curTab);
     return;
   }
@@ -97,7 +100,8 @@ function renderApp() {
       onRender: renderApp,
       onSelect: (id) => {
         state.selectedIds = new Set([id]);
-        renderApp();
+        updateSelectionOnly();
+        syncInspectorUi();
         locateFocusedNode(id, true);
       },
       onRequestTransform: requestTransformUpdate
@@ -105,7 +109,28 @@ function renderApp() {
   }
 }
 
-window.__RENDER_APP__ = renderApp;
+function renderCanvasOnly() {
+  if (state.viewMode === "outliner" || state.tabs.length === 0) return;
+  const curTab = getActiveTab();
+  if (curTab?.isEncrypted && curTab?._isLocked) return;
+
+  render(state, {
+    onRender: renderApp,
+    onSelect: (id) => {
+      state.selectedIds = new Set([id]);
+      updateSelectionOnly();
+      syncInspectorUi();
+      locateFocusedNode(id, true);
+    },
+    onRequestTransform: requestTransformUpdate
+  });
+}
+
+bus.on(EVENTS.RENDER_APP, renderApp);
+bus.on(EVENTS.RENDER_CANVAS_ONLY, renderCanvasOnly);
+bus.on(EVENTS.SHOW_WORKSPACE, showWorkspace);
+bus.on(EVENTS.SHOW_HOME, showHome);
+bus.on(EVENTS.SYNC_VAULT_UI, updateSecurityDockStatus);
 
 document.getElementById("btn-back-home")?.addEventListener("click", showHome);
 document.getElementById("btn-mode-mindmap")?.addEventListener("click", () => {
@@ -128,6 +153,11 @@ document.getElementById("btn-active-recall")?.addEventListener("click", () => {
   toggleRecallMode(renderApp);
 });
 
+document.getElementById("btn-open-settings")?.addEventListener("click", () => {
+  showHome();
+  switchHomeTab("settings", renderApp, showWorkspace);
+});
+
 // 快照时光机
 document.getElementById("btn-open-history")?.addEventListener("click", () => openVersionHistoryModal(renderApp));
 document.getElementById("nav-btn-history")?.addEventListener("click", () => openVersionHistoryModal(renderApp));
@@ -135,15 +165,12 @@ document.getElementById("btn-history-close")?.addEventListener("click", closeVer
 document.getElementById("btn-create-manual-snap")?.addEventListener("click", () => {
   const cur = getActiveTab();
   if (cur && !cur._isLocked) {
-    import("./js/storage/storage.js").then(m => {
-      m.createVersionSnapshot(cur, 'manual');
-      m.renderHistoryList(document.getElementById("history-search-input")?.value || "", renderApp);
-      import("./js/ui/dialog.js").then(d => d.showToast("📸 当前版本快照已拍摄保存"));
-    });
+    createVersionSnapshot(cur, "manual");
+    renderHistoryList(document.getElementById("history-search-input")?.value || "", renderApp);
+    showToast("📸 当前版本快照已拍摄保存");
   }
 });
 document.getElementById("btn-history-clear-all")?.addEventListener("click", async () => {
-  const { appConfirm, showToast } = await import("./js/ui/dialog.js");
   const ok = await appConfirm({
     title: "彻底粉碎快照库",
     message: "确定要永久清空所有历史版本快照吗？此操作无法撤销！",
@@ -160,7 +187,6 @@ document.getElementById("history-search-input")?.addEventListener("input", (e) =
   renderHistoryList(e.target.value, renderApp);
 });
 
-// 🛡️ 窗口关闭/刷新防丢拦截
 window.addEventListener("beforeunload", (e) => {
   const hasUnsaved = state.tabs.some(t => t.isDirty && !t._isLocked);
   if (hasUnsaved) {
@@ -183,11 +209,10 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// 初始化全套核心生命周期与交互引擎
-initTabBar(renderApp, showHome);
+initTabBar();
 initEventListeners(renderApp);
 initHomeEvents(renderApp, showWorkspace);
-initNotesDrawer(renderApp);
+initNotesDrawer();
 initFlashcards(renderApp);
 initVaultManager(renderApp);
 initContextMenu(renderApp);
@@ -195,29 +220,65 @@ initSearchEngine(renderApp);
 initIconPicker(renderApp);
 initAutoSaveEngine(renderApp);
 initSettingsViewEvents(renderApp);
-initInspectorEvents(renderApp);
+initInspectorEvents();
 
 showHome();
-console.log("🛡️ [YMind Pro Studio] 未保存修改防丢与关闭确认拦截系统已就绪！");
 
-// 🧪 注册全局自动化测试热键 (Ctrl+Shift+T / Alt+T)
-
-window.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t") || (e.altKey && e.key.toLowerCase() === "t")) {
-    e.preventDefault();
-    runAllTests(renderApp);
+if (typeof ResizeObserver !== "undefined") {
+  const vpElement = document.getElementById("viewport");
+  if (vpElement) {
+    const ro = new ResizeObserver(() => {
+      resizeCanvas();
+      bus.emit(EVENTS.RENDER_APP);
+    });
+    ro.observe(vpElement);
   }
+}
+
+document.getElementById("btn-toggle-minimap")?.addEventListener("click", () => {
+  document.getElementById("minimap-widget")?.classList.toggle("hidden");
 });
 
-// 🧪 本地自动化测试热键 (Alt+T / Ctrl+Shift+T，动态按需加载，不影响生产代码)
-window.addEventListener("keydown", async (e) => {
-  if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t") || (e.altKey && e.key.toLowerCase() === "t")) {
-    e.preventDefault();
-    try {
-      const { runAllTests } = await import("./js/test/test-runner.js");
-      runAllTests(renderApp);
-    } catch {
-      console.info("💡 本地测试模块未包含在提交中");
+// =========================================================================
+// 🌟 核心环境判定：同时兼容 Vite、Tauri dev 端口/协议与本地调试
+// =========================================================================
+const isDevMode = Boolean(
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV) ||
+  window.location.protocol === "http:" ||
+  window.location.port !== "" ||
+  localStorage.getItem("YMIND_DEV") === "1"
+);
+
+if (isDevMode) {
+  import("./js/test/test-runner.js").then(({ runAllTests }) => {
+    // 1. 控制台全局自测函数
+    window.runYMindTests = () => runAllTests(renderApp);
+
+    // 2. 全局物理按键捕获 (兼容 Mac Option+T 与 PC Alt+T)
+    window.addEventListener("keydown", (e) => {
+      const isT = e.code === "KeyT" || e.key.toLowerCase() === "t" || e.key === "†";
+      if (e.altKey && isT) {
+        e.preventDefault();
+        runAllTests(renderApp);
+      }
+    });
+
+    // 3. 动态将测试按钮安全注入至顶栏右侧（在开发态可见，生产态绝对为 0）
+    function mountDevTestButton() {
+      const barRight = document.querySelector(".top-bar-right");
+      if (barRight && !document.getElementById("btn-run-all-tests")) {
+        const btn = document.createElement("button");
+        btn.id = "btn-run-all-tests";
+        btn.className = "dock-capsule-btn";
+        btn.style.cssText = "border-color: rgba(0, 113, 227, 0.4); color: var(--apple-blue);";
+        btn.title = "[本地开发专用] 启动全系统自动化回归测试 (Alt+T)";
+        btn.innerHTML = `<span style="font-size:12px;">🧪</span><span>测试</span>`;
+        btn.onclick = () => runAllTests(renderApp);
+        barRight.prepend(btn);
+      }
     }
-  }
-});
+
+    mountDevTestButton();
+    bus.on(EVENTS.SHOW_WORKSPACE, () => setTimeout(mountDevTestButton, 50));
+  }).catch(() => {});
+}

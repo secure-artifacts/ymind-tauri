@@ -96,7 +96,7 @@ function findLabelByValue(optionsData, val) {
 }
 
 function escapeHtml(str) {
-  return String(str || "").replace(/[&<>"\x27]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "\x27": "&#39;" }[c]));
+  return String(str || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
 }
 
 window.addEventListener("click", (e) => {
@@ -193,9 +193,9 @@ export async function syncSettingsForm() {
       { value: "sketch-hand", label: "✏️ 温暖复古手绘" },
       { value: "deep-ocean", label: "🌊 深海蓝浪" },
       { value: "nordic-forest", label: "🌲 极地冷杉" },
-      { value: "sunset-glow", label: "🌅 加州落日晚霞" },
-      { value: "cyberpunk", label: "⚡ 赛博冷霓" },
-      { value: "morandi", label: "🌸 莫兰迪雅致" },
+      { value: "sunset-glow", label: "🌅 落日晚霞" },
+      { value: "cyberpunk", label: "⚡ 赛博霓虹" },
+      { value: "morandi-nature", label: "🌸 莫兰迪雅致" },
       { value: "caramel-latte", label: "☕ 焦糖拿铁" },
       { value: "mystic-nebula", label: "🔮 灵动星云" },
       { value: "fresh-mint", label: "🌿 初夏薄荷" },
@@ -206,9 +206,10 @@ export async function syncSettingsForm() {
   const lineOpts = [{
     items: [
       { value: "curve", label: "平滑曲线 (Smooth Curve)" },
-      { value: "hand-drawn", label: "✒️ 钢笔手绘 (Hand-drawn)" },
       { value: "rounded-ortho", label: "圆角折线 (Rounded Ortho)" },
-      { value: "straight", label: "极简直线 (Straight Line)" }
+      { value: "sharp-ortho", label: "直角折线 (Sharp Ortho)" },
+      { value: "straight", label: "极简直线 (Straight Line)" },
+      { value: "arc-corner", label: "现代圆弧 (Arc Corner)" }
     ]
   }];
 
@@ -216,29 +217,28 @@ export async function syncSettingsForm() {
     items: [
       { value: "squircle", label: "超椭圆卡片 (Apple Squircle)" },
       { value: "rect", label: "几何方框 (Rectangle)" },
-      { value: "hand-drawn", label: "✏️ 手绘草图框 (Sketch Box)" },
-      { value: "underline", label: "极简极按下划线 (Underline)" },
+      { value: "underline", label: "极简下划线 (Underline)" },
       { value: "solid", label: "实色填充卡片 (Solid Card)" }
     ]
   }];
 
   const themeOpts = [{
     items: [
-      { value: "studio-light", label: "🍏 雪域纯白点阵" },
-      { value: "cupertino-grid", label: "📐 库比蒂诺工程方格" },
-      { value: "warm-parchment", label: "📜 暖心晨光羊皮纸" },
-      { value: "matcha-breeze", label: "🍵 京都抹茶微风" },
-      { value: "lavender-mist", label: "🪻 普罗旺斯薰衣草雾" },
-      { value: "california-sunset", label: "🌄 加州落日暖霞" },
-      { value: "vintage-craft", label: "📦 复古精装牛皮纸" },
-      { value: "blueprint-pro", label: "📐 专业工程蓝图" },
-      { value: "slate-chalkboard", label: "🎓 墨绿学院黑板" },
-      { value: "nordic-wood", label: "🪵 北欧白木年轮" },
-      { value: "space-gray", label: " 深空灰钛金属" },
-      { value: "midnight-abyss", label: "🌑 极夜深邃黑曜" },
-      { value: "carbon-fiber", label: "🏎️ 超轻碳纤维织" },
-      { value: "cyber-matrix", label: "⚡ 赛博冷霓矩阵" },
-      { value: "aurora-borealis", label: "🔮 暗夜极光幻境" }
+      { value: "studio-white", label: "🍏 雪域纯白" },
+      { value: "warm-ivory", label: "📜 暖心象牙" },
+      { value: "vintage-parchment", label: "📦 复古羊皮" },
+      { value: "matcha-mist", label: "🍵 京都抹茶" },
+      { value: "lavender-fog", label: "🪻 薰衣草雾" },
+      { value: "glacier-blue", label: "🧊 冰川天蓝" },
+      { value: "morandi-stone", label: "🪨 莫兰迪石" },
+      { value: "sakura-blossom", label: "🌸 樱花浅粉" },
+      { value: "sand-dune", label: "🏜️ 晨曦流沙" },
+      { value: "space-gray", label: " 深空灰钛" },
+      { value: "midnight-abyss", label: "🌑 极夜黑曜" },
+      { value: "prussian-navy", label: "🌊 普鲁士蓝" },
+      { value: "slate-chalkboard", label: "🎓 学院墨绿" },
+      { value: "cyber-violet", label: "🔮 暗夜紫晶" },
+      { value: "obsidian-coffee", label: "☕ 浓缩黑曜" }
     ]
   }];
 
@@ -257,8 +257,9 @@ export async function syncSettingsForm() {
   createCustomSelect("wrap-setting-default-palette", paletteOpts, s.palette);
   createCustomSelect("wrap-setting-default-line", lineOpts, s.lineStyle);
   createCustomSelect("wrap-setting-default-box", boxOpts, s.boxStyle);
-  createCustomSelect("wrap-setting-default-theme", themeOpts, s.canvasTheme);
+  createCustomSelect("wrap-setting-default-theme", themeOpts, s.canvasBgColor || "studio-white");
   createCustomSelect("wrap-setting-auto-save", autoSaveOpts, s.autoSaveInterval || "30");
+
   const focusFollowOpts = [{
     items: [
       { value: "smooth", label: "🚀 开启平滑移动 (推荐默认 · 流畅动画)" },
@@ -365,7 +366,7 @@ export function initSettingsViewEvents(renderApp) {
       palette: customSelectRegistry.get("wrap-setting-default-palette")?.getValue() || "apple-classic",
       lineStyle: customSelectRegistry.get("wrap-setting-default-line")?.getValue() || "curve",
       boxStyle: customSelectRegistry.get("wrap-setting-default-box")?.getValue() || "squircle",
-      canvasTheme: customSelectRegistry.get("wrap-setting-default-theme")?.getValue() || "studio-light",
+      canvasBgColor: customSelectRegistry.get("wrap-setting-default-theme")?.getValue() || "studio-white",
       autoSaveInterval: customSelectRegistry.get("wrap-setting-auto-save")?.getValue() || "30",
       focusFollowMode: customSelectRegistry.get("wrap-setting-focus-follow")?.getValue() || "smooth"
     };
@@ -384,7 +385,7 @@ export function initSettingsViewEvents(renderApp) {
     customSelectRegistry.get("wrap-setting-default-palette")?.setValue(def.palette);
     customSelectRegistry.get("wrap-setting-default-line")?.setValue(def.lineStyle);
     customSelectRegistry.get("wrap-setting-default-box")?.setValue(def.boxStyle);
-    customSelectRegistry.get("wrap-setting-default-theme")?.setValue(def.canvasTheme);
+    customSelectRegistry.get("wrap-setting-default-theme")?.setValue(def.canvasBgColor || "studio-white");
     customSelectRegistry.get("wrap-setting-auto-save")?.setValue(def.autoSaveInterval || "30");
     customSelectRegistry.get("wrap-setting-focus-follow")?.setValue(def.focusFollowMode || "smooth");
     updateTypographyPreview();

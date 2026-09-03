@@ -5,6 +5,8 @@ import { syncInspectorUi, applyCanvasThemeToBody } from "./inspector.js";
 import { syncSettingsForm } from "./settings.js";
 import { encryptMindPayload } from "../storage/crypto.js";
 import { showLockScreen, updateSecurityDockStatus } from "./vault.js";
+import { serializeTabToPackage } from "../core/serializer.js";
+import { showToast } from "./dialog.js";
 
 const RECENT_KEY = "YMIND_PRO_RECENT_DOCS_V2";
 let activeHomeNav = "home";
@@ -20,14 +22,13 @@ export function getRecentDocs() {
   }
 }
 
-export async function recordRecentDoc(title, data, layout = "mindmap", filePath = null, styles = {}, isEncrypted = false, password = null, passwordHint = "", encryptedVault = null) {
+export async function recordRecentDoc(title, data, layout = "mindmap", filePath = null, styles = {}, isEncrypted = false, password = null, passwordHint = "", encryptedVault = null, cameraTransform = null) {
   try {
     let recents = getRecentDocs();
     const docTitle = title || "未命名导图";
-    const existingIdx = recents.findIndex(r => (filePath && r.filePath === filePath) || r.title === docTitle);
+    const existingIdx = recents.findIndex(r => (filePath && r.filePath === filePath) || (!filePath && !r.filePath && r.title === docTitle));
 
     let finalVault = encryptedVault;
-    // 如果是加密导图，绝对不在本地持久化明文树，立即生成密文包
     if (isEncrypted && data && password && !finalVault) {
       finalVault = await encryptMindPayload(data, password, passwordHint);
     }
@@ -35,7 +36,7 @@ export async function recordRecentDoc(title, data, layout = "mindmap", filePath 
     const item = {
       id: existingIdx >= 0 ? recents[existingIdx].id : ("doc_" + Date.now()),
       title: docTitle,
-      filePath: filePath || (existingIdx >= 0 ? recents[existingIdx].filePath : null),
+      filePath: filePath || null,
       time: Date.now(),
       layout: layout || (existingIdx >= 0 ? recents[existingIdx].layout : "mindmap"),
       colorPalette: styles.colorPalette || (existingIdx >= 0 ? recents[existingIdx].colorPalette : "apple-classic"),
@@ -48,8 +49,8 @@ export async function recordRecentDoc(title, data, layout = "mindmap", filePath 
       isEncrypted: Boolean(isEncrypted),
       passwordHint: passwordHint || (finalVault?.hint || ""),
       encryptedVault: isEncrypted ? finalVault : null,
+      camera: cameraTransform || (existingIdx >= 0 ? recents[existingIdx].camera : null),
       nodeCount: isEncrypted ? (existingIdx >= 0 ? recents[existingIdx].nodeCount : 1) : countNodes(data),
-      // 加密状态下完全置空明文数据
       data: isEncrypted ? null : (data ? JSON.parse(JSON.stringify(data)) : { id: "root", text: docTitle, children: [] })
     };
 
@@ -101,11 +102,15 @@ function openOrSwitchDoc(doc, openWorkspace) {
   if (!doc) return;
   const docTitle = doc.title;
   const docFilePath = doc.filePath || null;
-  const existingTab = state.tabs.find(t => (docFilePath && t.filePath === docFilePath) || t.title === docTitle);
+  const existingTab = state.tabs.find(t => (docFilePath && t.filePath === docFilePath) || (!docFilePath && !t.filePath && t.title === docTitle));
 
   if (existingTab) {
     state.activeTabId = existingTab.id;
-    camera.transform = existingTab.camera;
+    if (existingTab.camera && existingTab.camera.scale) {
+      camera.transform.x = existingTab.camera.x;
+      camera.transform.y = existingTab.camera.y;
+      camera.transform.scale = existingTab.camera.scale;
+    }
     applyCanvasThemeToBody(existingTab.canvasBgColor || "studio-white", existingTab.canvasBgPattern || "dots");
     openWorkspace();
     syncInspectorUi();
@@ -125,16 +130,23 @@ function openOrSwitchDoc(doc, openWorkspace) {
   newTab.canvasTheme = doc.canvasTheme || "studio-light";
   newTab.canvasBgColor = doc.canvasBgColor || "studio-white";
   newTab.canvasBgPattern = doc.canvasBgPattern || "dots";
-  newTab.isDirty = false;
-  camera.transform = newTab.camera;
+  newTab.isDirty = Boolean(!docFilePath);
+
+  // 🌟 精准还原该文档之前关闭时保存的缩放比例与中心点
+  if (doc.camera && doc.camera.scale) {
+    newTab.camera = { ...doc.camera };
+  }
+  camera.transform.x = newTab.camera.x;
+  camera.transform.y = newTab.camera.y;
+  camera.transform.scale = newTab.camera.scale;
 
   if (doc.isEncrypted) {
-    // 🛡️ 加密文档进入隔离锁屏态，绝不加载任何明文
     newTab.isEncrypted = true;
     newTab.encryptedVault = doc.encryptedVault;
     newTab.passwordHint = doc.passwordHint || "";
     newTab.mindData = { id: "root", text: "🔒 " + docTitle, children: [] };
-    newTab.history = [];
+    newTab.history = [{ id: "root", text: "🔒 " + docTitle, children: [] }];
+    newTab.historyIndex = 0;
     newTab._isLocked = true;
   } else {
     newTab.isEncrypted = false;
@@ -142,7 +154,7 @@ function openOrSwitchDoc(doc, openWorkspace) {
     newTab.mindData = doc.data ? JSON.parse(JSON.stringify(doc.data)) : { id: "root", text: docTitle, children: [] };
     newTab.selectedIds = new Set([newTab.mindData.id || "root"]);
     newTab.focusedRootId = newTab.mindData.id || "root";
-    newTab.history = [JSON.stringify(newTab.mindData)];
+    newTab.history = [JSON.parse(JSON.stringify(newTab.mindData))];
     newTab.historyIndex = 0;
   }
 
@@ -159,7 +171,8 @@ function openOrSwitchDoc(doc, openWorkspace) {
 function openTemplateDoc(tpl, openWorkspace) {
   const newTab = createNewTab(tpl.id);
   newTab.filePath = null;
-  camera.transform = newTab.camera;
+  newTab.isDirty = true;
+  camera.transform = { ...newTab.camera };
   applyCanvasThemeToBody(newTab.canvasBgColor || "studio-white", newTab.canvasBgPattern || "dots");
   recordRecentDoc(tpl.name, newTab.mindData, tpl.layout, null, {
     colorPalette: newTab.colorPalette,
@@ -168,7 +181,7 @@ function openTemplateDoc(tpl, openWorkspace) {
     canvasTheme: newTab.canvasTheme,
     canvasBgColor: newTab.canvasBgColor,
     canvasBgPattern: newTab.canvasBgPattern
-  }, false);
+  }, false, null, "", null, newTab.camera);
   openWorkspace();
   syncInspectorUi();
 }
@@ -286,31 +299,35 @@ function renderDocList(containerId, docs, renderApp, openWorkspace) {
   list.forEach(doc => {
     const row = document.createElement("div");
     row.className = "recent-doc-row";
+    const isDraft = !doc.filePath;
     const starIcon = doc.starred ? "★" : "☆";
     const starClass = doc.starred ? "starred" : "";
-    const layoutLabel = {
-      "mindmap": "经典双向",
-      "logic-right": "向右逻辑",
-      "logic-left": "向左逻辑",
-      "org-down": "组织架构"
-    }[doc.layout] || "思维导图";
+
+    let iconChar = "📄";
+    if (doc.isEncrypted) iconChar = "🔒";
+    else if (isDraft) iconChar = "📝";
+
+    const tagHtml = doc.isEncrypted
+      ? '<span class="doc-badge-vault">AES-256</span>'
+      : (isDraft ? '<span class="doc-badge-draft">草稿</span>' : '');
+
+    const pathDisplay = doc.filePath ? doc.filePath : "本地工作区草稿箱";
 
     row.innerHTML = `
-      <div class="doc-icon-wrap">${doc.isEncrypted ? "🔒" : "📄"}</div>
+      <div class="doc-icon-wrap">${iconChar}</div>
       <div class="doc-main-info">
-        <div class="doc-title">${doc.title} ${doc.isEncrypted ? '<span class="apple-tag p1" style="font-size:9px;margin-left:4px;">AES-256</span>' : ''}</div>
+        <div class="doc-title-row">
+          <span class="doc-title">${doc.title}</span>
+          ${tagHtml}
+        </div>
         <div class="doc-meta">
-          <span class="doc-time">${formatTimeAgo(doc.time)}</span>
-          <span class="doc-dot">·</span>
-          <span class="doc-badge">${layoutLabel}</span>
-          <span class="doc-dot">·</span>
-          <span class="doc-count">${doc.isEncrypted ? "加密保护" : (doc.nodeCount || 1) + " 个节点"}</span>
-          <span class="doc-dot">·</span>
-          <span class="doc-path" title="${doc.filePath || '本地草稿'}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${doc.filePath || '本地草稿'}</span>
+          <span>${formatTimeAgo(doc.time)}</span>
+          <span>·</span>
+          <span class="doc-path-text" title="${pathDisplay}">${pathDisplay}</span>
         </div>
       </div>
       <div class="doc-actions">
-        <button class="doc-action-btn star-btn ${starClass}" title="${doc.starred ? '取消收藏' : '收藏置顶'}">${starIcon}</button>
+        <button class="doc-action-btn star-btn ${starClass}" title="${doc.starred ? '取消置顶收藏' : '置顶收藏'}">${starIcon}</button>
         <button class="doc-action-btn delete-btn" title="从历史中移除">✕</button>
       </div>
     `;
@@ -320,8 +337,14 @@ function renderDocList(containerId, docs, renderApp, openWorkspace) {
       openOrSwitchDoc(doc, openWorkspace);
     };
 
-    row.querySelector(".star-btn").onclick = () => toggleStarDoc(doc.id, () => renderHomeHub(renderApp, openWorkspace));
-    row.querySelector(".delete-btn").onclick = () => removeRecentDoc(doc.id, () => renderHomeHub(renderApp, openWorkspace));
+    row.querySelector(".star-btn").onclick = (e) => {
+      e.stopPropagation();
+      toggleStarDoc(doc.id, () => renderHomeHub(renderApp, openWorkspace));
+    };
+    row.querySelector(".delete-btn").onclick = (e) => {
+      e.stopPropagation();
+      removeRecentDoc(doc.id, () => renderHomeHub(renderApp, openWorkspace));
+    };
 
     container.appendChild(row);
   });

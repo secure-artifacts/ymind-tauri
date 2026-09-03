@@ -1,13 +1,15 @@
-import { findParent, getPrimarySelectedNode, findNode, state, getActiveTab, getGlobalSettings } from "./state.js";
+import { state, getActiveTab, findNode, getPrimarySelectedNode } from "./state.js";
+import { getGlobalSettings } from "./config.js";
 import { syncMinimapViewportBox } from "../render/minimap.js";
+import { syncInlineEditorPosition } from "../render/render.js";
+import { bus, EVENTS } from "./event-bus.js";
 
 export const camera = {
-  transform: { x: window.innerWidth / 3, y: window.innerHeight / 2 - 40, scale: 1 },
+  transform: { x: window.innerWidth / 2 - 60, y: window.innerHeight / 2 - 30, scale: 1 },
   isTransformPending: false,
   cameraAnimationId: null,
   inertiaAnimationId: null
 };
-window.__CAMERA_TRANSFORM__ = camera.transform;
 
 function syncTabCamera() {
   const curTab = getActiveTab();
@@ -18,38 +20,46 @@ export function requestTransformUpdate() {
   if (camera.isTransformPending) return;
   camera.isTransformPending = true;
   requestAnimationFrame(() => {
-    const x = camera.transform.x;
-    const y = camera.transform.y;
-    const s = camera.transform.scale;
-    const targetEl = document.getElementById("canvas-stage");
-    if (targetEl) {
-      targetEl.setAttribute("transform", `translate(${x} ${y}) scale(${s})`);
-    }
+    bus.emit(EVENTS.RENDER_CANVAS_ONLY);
     syncMinimapViewportBox();
-    
+    syncInlineEditorPosition();
     const zt = document.getElementById("txt-zoom-level");
-    if (zt) zt.innerText = `${Math.round(s * 100)}%`;
-
+    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
     camera.isTransformPending = false;
   });
 }
 
 export function startInertiaMomentum(vx, vy) {
   if (camera.inertiaAnimationId) cancelAnimationFrame(camera.inertiaAnimationId);
-  let curVx = vx;
-  let curVy = vy;
-  const friction = 0.86;
-  const minVelocity = 0.02;
-  function momentumStep() {
-    if (Math.abs(curVx) < minVelocity && Math.abs(curVy) < minVelocity) {
+
+  state.isInteracting = true;
+  const maxVel = 2.0;
+  let curVx = Math.max(-maxVel, Math.min(maxVel, vx));
+  let curVy = Math.max(-maxVel, Math.min(maxVel, vy));
+
+  let lastTime = performance.now();
+  const friction = 0.0085;
+
+  function momentumStep(now) {
+    const dt = Math.min(now - lastTime, 24);
+    lastTime = now;
+    const speed = Math.hypot(curVx, curVy);
+
+    if (speed < 0.02) {
       camera.inertiaAnimationId = null;
+      state.isInteracting = false;
       syncTabCamera();
+      requestTransformUpdate();
       return;
     }
-    camera.transform.x += curVx * 10;
-    camera.transform.y += curVy * 10;
-    curVx *= friction;
-    curVy *= friction;
+
+    camera.transform.x += curVx * dt;
+    camera.transform.y += curVy * dt;
+
+    const decay = Math.exp(-friction * dt);
+    curVx *= decay;
+    curVy *= decay;
+
     requestTransformUpdate();
     camera.inertiaAnimationId = requestAnimationFrame(momentumStep);
   }
@@ -65,126 +75,56 @@ export function stopAllCameraAnimations() {
     cancelAnimationFrame(camera.inertiaAnimationId);
     camera.inertiaAnimationId = null;
   }
+  state.isInteracting = false;
 }
 
-export function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
-}
-
-export function smoothPanTo(targetX, targetY, targetScale = camera.transform.scale, duration = 280) {
+export function springAnimateTo(targetX, targetY, targetScale = camera.transform.scale, tension = 180, friction = 24) {
   stopAllCameraAnimations();
-  const startX = camera.transform.x;
-  const startY = camera.transform.y;
-  const startScale = camera.transform.scale;
-  const startTime = performance.now();
+  state.isInteracting = true;
 
-  function step(currentTime) {
-    const elapsed = currentTime - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    const ease = easeOutCubic(progress);
+  let curX = camera.transform.x, curY = camera.transform.y, curS = camera.transform.scale;
+  let vx = 0, vy = 0, vs = 0;
+  let lastTime = performance.now();
 
-    camera.transform.x = startX + (targetX - startX) * ease;
-    camera.transform.y = startY + (targetY - startY) * ease;
-    camera.transform.scale = startScale + (targetScale - startScale) * ease;
+  function springStep(now) {
+    const dt = Math.min((now - lastTime) / 1000, 0.032);
+    lastTime = now;
+
+    const ax = -tension * (curX - targetX) - friction * vx;
+    const ay = -tension * (curY - targetY) - friction * vy;
+    const as = -tension * (curS - targetScale) - friction * vs;
+
+    vx += ax * dt;
+    vy += ay * dt;
+    vs += as * dt;
+
+    curX += vx * dt;
+    curY += vy * dt;
+    curS += vs * dt;
+
+    camera.transform.x = curX;
+    camera.transform.y = curY;
+    camera.transform.scale = curS;
     requestTransformUpdate();
 
-    if (progress < 1) {
-      camera.cameraAnimationId = requestAnimationFrame(step);
-    } else {
+    const isResting = Math.abs(curX - targetX) < 0.4 && Math.abs(curY - targetY) < 0.4 &&
+                      Math.abs(curS - targetScale) < 0.002 && Math.hypot(vx, vy, vs) < 0.1;
+
+    if (isResting) {
+      camera.transform.x = targetX;
+      camera.transform.y = targetY;
+      camera.transform.scale = targetScale;
       camera.cameraAnimationId = null;
+      state.isInteracting = false;
       syncTabCamera();
+      requestTransformUpdate();
+    } else {
+      camera.cameraAnimationId = requestAnimationFrame(springStep);
     }
   }
-  camera.cameraAnimationId = requestAnimationFrame(step);
+  camera.cameraAnimationId = requestAnimationFrame(springStep);
 }
 
-/**
- * 🌟 核心算法：以「锚点节点 + 直接子节点列表」作为精确范围与数量考量单元
- */
-function getDirectChildrenCluster(targetNode, root) {
-  if (!targetNode || !root) return null;
-
-  const isRoot = targetNode.id === (state.focusedRootId || root.id);
-  const structure = state.layoutStructure || "mindmap";
-
-  let anchorNode = targetNode;
-
-  // 1. 无子节点的叶子节点：锚点提升为其直接父节点
-  if (!isRoot && (!targetNode.children || targetNode.children.length === 0 || targetNode.collapsed)) {
-    const parent = findParent(targetNode.id, root);
-    if (parent) anchorNode = parent;
-  }
-
-  const isAnchorRoot = anchorNode.id === (state.focusedRootId || root.id);
-  const directChildren = (anchorNode.children && !anchorNode.collapsed) ? anchorNode.children : [];
-  const childCount = directChildren.length;
-
-  // 2. 双向导图根节点的对称平衡范围
-  if (isAnchorRoot && structure === "mindmap") {
-    const rootCenterX = root.x + (root.width || 80) / 2;
-    const rootCenterY = root.y + (root.height || 36) / 2;
-
-    let leftMax = 0;
-    let rightMax = 0;
-    let minY = root.y;
-    let maxY = root.y + (root.height || 36);
-
-    // 收集根节点自身的直接子节点
-    directChildren.forEach(c => {
-      if (c.x !== undefined && c.y !== undefined) {
-        const w = c.width || 80;
-        const h = c.height || 36;
-        if (c.x < rootCenterX) leftMax = Math.max(leftMax, rootCenterX - c.x);
-        if (c.x + w > rootCenterX) rightMax = Math.max(rightMax, (c.x + w) - rootCenterX);
-        minY = Math.min(minY, c.y);
-        maxY = Math.max(maxY, c.y + h);
-      }
-    });
-
-    const maxHalfWidth = Math.max(leftMax, rightMax);
-    const symmetricWidth = maxHalfWidth * 2;
-    const totalHeight = maxY - minY;
-
-    return {
-      width: Math.max(root.width || 80, symmetricWidth),
-      height: totalHeight,
-      centerX: rootCenterX,
-      centerY: (minY + maxY) / 2,
-      childCount: childCount,
-      isRoot: true
-    };
-  }
-
-  // 3. 常规分支锚点：仅包含 [anchorNode 自身 + 其全部直接子节点]
-  const focusGroup = [anchorNode, ...directChildren];
-
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  focusGroup.forEach(n => {
-    if (n.x !== undefined && n.y !== undefined) {
-      const w = n.width || 80;
-      const h = n.height || 36;
-      minX = Math.min(minX, n.x);
-      maxX = Math.max(maxX, n.x + w);
-      minY = Math.min(minY, n.y);
-      maxY = Math.max(maxY, n.y + h);
-    }
-  });
-
-  if (minX === Infinity) return null;
-
-  return {
-    width: maxX - minX,
-    height: maxY - minY,
-    centerX: (minX + maxX) / 2,
-    centerY: (minY + maxY) / 2,
-    childCount: childCount,
-    isRoot: isAnchorRoot
-  };
-}
-
-/**
- * 🌟 自适应直接子节点范围与数量的动态平衡缩放
- */
 export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
   const root = state.mindData;
   if (!root) return;
@@ -192,58 +132,38 @@ export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
   const vp = document.getElementById("viewport");
   if (!vp) return;
 
-  const vpRect = vp.getBoundingClientRect();
-  const usableWidth = vpRect.width > 0 ? vpRect.width : window.innerWidth;
-  const usableHeight = vpRect.height > 0 ? vpRect.height : window.innerHeight;
+  const usableW = vp.clientWidth || window.innerWidth;
+  const usableH = vp.clientHeight || window.innerHeight;
 
-  let targetNode = null;
-  if (typeof nodeOrId === "string") targetNode = findNode(nodeOrId, root);
-  else if (nodeOrId && typeof nodeOrId === "object" && nodeOrId.id && nodeOrId.x !== undefined) targetNode = nodeOrId;
-  else targetNode = getPrimarySelectedNode();
-
-  if (!targetNode) targetNode = findNode(state.focusedRootId, root) || root;
-
-  // 获取「锚点 + 直接子节点」的紧凑范围与子节点数量
-  const cluster = getDirectChildrenCluster(targetNode, root);
-  if (!cluster) return;
-
-  // 视口安全内边距
-  const padX = cluster.isRoot ? 90 : 75;
-  const padY = cluster.isRoot ? 70 : 55;
-  const totalW = cluster.width + padX * 2;
-  const totalH = cluster.height + padY * 2;
-
-  // 几何理想适配比例
-  let fitScale = Math.min(usableWidth / totalW, usableHeight / totalH);
-
-  // ⚖️ 子节点数量与缩放比例联动规则：
-  // 1. 无子节点或极少子节点 (k <= 3): 100% 显示，绝无冗余缩小与放大
-  // 2. 中等子节点 (4 <= k <= 8): 适配缩放，可读性下限保底 0.75
-  // 3. 密集多子节点 (k > 8): 适配缩放，可读性下限保底 0.65
-  let minAllowed = 0.65;
-  if (cluster.isRoot) {
-    minAllowed = 0.45;
-  } else if (cluster.childCount <= 3) {
-    minAllowed = 0.88;
-  } else if (cluster.childCount <= 8) {
-    minAllowed = 0.72;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  function scan(n) {
+    if (n.x !== undefined && n.y !== undefined) {
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x + (n.width || 80));
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y + (n.height || 36));
+    }
+    if (n.children && !n.collapsed) n.children.forEach(scan);
   }
+  scan(root);
 
-  let targetScale = Math.max(minAllowed, Math.min(1.00, fitScale));
+  if (minX === Infinity) return;
 
-  // 舒适度吸附：如果计算结果非常接近 100% (>= 0.88 且放得下)，吸附为 1.00 原生清晰度
-  if (targetScale >= 0.88 && fitScale >= 0.88) {
-    targetScale = 1.00;
-  }
+  const padX = 100, padY = 80;
+  const totalW = (maxX - minX) + padX * 2;
+  const totalH = (maxY - minY) + padY * 2;
 
-  // 中心对齐
-  const screenCenterX = usableWidth * 0.50;
-  const screenCenterY = usableHeight * 0.50;
-  const targetX = screenCenterX - cluster.centerX * targetScale;
-  const targetY = screenCenterY - cluster.centerY * targetScale;
+  const fitScale = Math.min(usableW / totalW, usableH / totalH);
+  const targetScale = Math.max(0.3, Math.min(1.0, fitScale));
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+
+  const targetX = usableW / 2 - centerX * targetScale;
+  const targetY = usableH / 2 - centerY * targetScale;
 
   if (animated) {
-    smoothPanTo(targetX, targetY, targetScale, 280);
+    springAnimateTo(targetX, targetY, targetScale, 160, 22);
   } else {
     stopAllCameraAnimations();
     camera.transform.x = targetX;
@@ -257,17 +177,57 @@ export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
 export function locateFocusedNode(nodeOrId = null, animated = true) {
   const followMode = getGlobalSettings().focusFollowMode || "smooth";
   if (followMode === "off") return;
-  smartAdaptiveCenter(nodeOrId, animated);
+
+  const root = state.mindData;
+  if (!root) return;
+
+  const vp = document.getElementById("viewport");
+  if (!vp) return;
+
+  let targetNode = null;
+  if (typeof nodeOrId === "string") targetNode = findNode(nodeOrId, root);
+  else if (nodeOrId && typeof nodeOrId === "object" && nodeOrId.id) targetNode = nodeOrId;
+  else targetNode = getPrimarySelectedNode();
+
+  if (!targetNode || targetNode.x === undefined) return;
+
+  const screenW = vp.clientWidth || window.innerWidth;
+  const screenH = vp.clientHeight || window.innerHeight;
+  const currentScale = camera.transform.scale;
+
+  const nodeScreenX = targetNode.x * currentScale + camera.transform.x;
+  const nodeScreenY = targetNode.y * currentScale + camera.transform.y;
+  const nodeScreenW = (targetNode.width || 80) * currentScale;
+  const nodeScreenH = (targetNode.height || 36) * currentScale;
+
+  const safeMarginX = Math.max(140, screenW * 0.16);
+  const safeMarginY = Math.max(100, screenH * 0.16);
+
+  const isInsideSafeZone =
+    nodeScreenX >= safeMarginX &&
+    nodeScreenX + nodeScreenW <= screenW - safeMarginX &&
+    nodeScreenY >= safeMarginY &&
+    nodeScreenY + nodeScreenH <= screenH - safeMarginY;
+
+  if (isInsideSafeZone) return;
+
+  const nodeCenterX = targetNode.x + (targetNode.width || 80) / 2;
+  const nodeCenterY = targetNode.y + (targetNode.height || 36) / 2;
+
+  const targetX = screenW / 2 - nodeCenterX * currentScale;
+  const targetY = screenH / 2 - nodeCenterY * currentScale;
+
+  if (animated && followMode === "smooth") {
+    springAnimateTo(targetX, targetY, currentScale, 190, 24);
+  } else {
+    stopAllCameraAnimations();
+    camera.transform.x = targetX;
+    camera.transform.y = targetY;
+    syncTabCamera();
+    requestTransformUpdate();
+  }
 }
 
-export function smartCenterOnSelectedNode(stateRef, animated = true) {
-  smartAdaptiveCenter(null, animated);
-}
-
-export function locateNodeCenter(nodeOrId = null, animated = true) {
-  smartAdaptiveCenter(nodeOrId, animated);
-}
-
-export function ensureNodeVisible(nodeOrId = null, animated = true) {
-  smartAdaptiveCenter(nodeOrId, animated);
-}
+export function smartCenterOnSelectedNode(stateRef, animated = true) { smartAdaptiveCenter(null, animated); }
+export function locateNodeCenter(nodeOrId = null, animated = true) { locateFocusedNode(nodeOrId, animated); }
+export function ensureNodeVisible(nodeOrId = null, animated = true) { locateFocusedNode(nodeOrId, animated); }

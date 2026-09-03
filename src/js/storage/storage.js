@@ -3,56 +3,38 @@ import { appAlert, appConfirm, showToast } from '../ui/dialog.js';
 import { syncInspectorUi } from '../ui/inspector.js';
 import { serializeTabToPackage } from '../core/serializer.js';
 import { showLockScreen, updateSecurityDockStatus } from '../ui/vault.js';
+import { idbSaveSnapshot, idbGetAllSnapshots, idbDeleteSnapshot, idbClearSnapshots } from './idb.js';
 
-const SNAPSHOTS_POOL_KEY = "YMIND_PRO_SNAPSHOTS_POOL";
-const MAX_SNAPSHOTS = 18;
+let cachedSnapshots = [];
+const deepClone = typeof structuredClone === "function" ? structuredClone : (obj) => JSON.parse(JSON.stringify(obj));
 
-// 计算快照池实际占用的字节数
-export function getSnapshotsStorageSize() {
-  try {
-    const raw = localStorage.getItem(SNAPSHOTS_POOL_KEY) || "";
-    const bytes = new Blob([raw]).size;
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
-  } catch {
-    return "未知";
-  }
+export async function refreshSnapshotsCache() {
+  cachedSnapshots = await idbGetAllSnapshots();
+  return cachedSnapshots;
 }
 
 export function getAllSnapshots() {
+  return cachedSnapshots;
+}
+
+export function getSnapshotsStorageSize() {
   try {
-    const raw = localStorage.getItem(SNAPSHOTS_POOL_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.warn("读取快照池失败", e);
-    return [];
+    const json = JSON.stringify(cachedSnapshots);
+    const bytes = new Blob([json]).size;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  } catch {
+    return "0 KB";
   }
 }
 
-function saveSnapshotsPool(list) {
-  try {
-    localStorage.setItem(SNAPSHOTS_POOL_KEY, JSON.stringify(list));
-  } catch (e) {
-    try {
-      const trimmed = list.slice(0, 6);
-      localStorage.setItem(SNAPSHOTS_POOL_KEY, JSON.stringify(trimmed));
-    } catch (err) {}
-  }
-}
-
-export function createVersionSnapshot(tab = getActiveTab(), trigger = 'auto') {
-  // 🛡️ 核心防线：锁定状态文档或加密文档在自动模式下一律不静默存快照
+export async function createVersionSnapshot(tab = getActiveTab(), trigger = 'auto') {
   if (!tab || tab._isLocked || !tab.mindData) return null;
   if (tab.isEncrypted && trigger === 'auto') return null;
 
-  const snapshots = getAllSnapshots();
-  const currentDataString = JSON.stringify(tab.mindData);
-
-  const lastSnap = snapshots.find(s => s.tabTitle === tab.title);
-  if (lastSnap && !tab.isEncrypted && JSON.stringify(lastSnap.mindData) === currentDataString && trigger === 'auto') {
-    return null;
-  }
+  // 🌟 原生高速深拷贝（消除 5000+ 节点时的全量字符串序列化卡顿）
+  const clonedData = tab.isEncrypted ? null : deepClone(tab.mindData);
 
   const newSnapshot = {
     id: "snap_" + Date.now(),
@@ -70,32 +52,26 @@ export function createVersionSnapshot(tab = getActiveTab(), trigger = 'auto') {
     nodeCount: countNodes(tab.mindData),
     timestamp: Date.now(),
     trigger: trigger,
-    // 加密状态下绝不存明文
-    mindData: tab.isEncrypted ? null : JSON.parse(currentDataString)
+    mindData: clonedData
   };
 
-  snapshots.unshift(newSnapshot);
-
-  if (snapshots.length > MAX_SNAPSHOTS) {
-    snapshots.splice(MAX_SNAPSHOTS);
-  }
-
-  saveSnapshotsPool(snapshots);
+  await idbSaveSnapshot(newSnapshot);
+  await refreshSnapshotsCache();
   return newSnapshot;
 }
 
-export function deleteSnapshot(snapId) {
-  let list = getAllSnapshots().filter(s => s.id !== snapId);
-  saveSnapshotsPool(list);
+export async function deleteSnapshot(snapId) {
+  await idbDeleteSnapshot(snapId);
+  await refreshSnapshotsCache();
 }
 
-export function clearAllSnapshots() {
-  localStorage.removeItem(SNAPSHOTS_POOL_KEY);
+export async function clearAllSnapshots() {
+  await idbClearSnapshots();
+  cachedSnapshots = [];
 }
 
 export function restoreSnapshot(snapId, mode = 'new_tab', renderCallback) {
-  const snapshots = getAllSnapshots();
-  const snap = snapshots.find(s => s.id === snapId);
+  const snap = cachedSnapshots.find(s => s.id === snapId);
   if (!snap) {
     appAlert({ title: "快照失效", message: "未找到该快照，可能已被清理。", type: "warning" });
     return;
@@ -124,16 +100,17 @@ export function restoreSnapshot(snapId, mode = 'new_tab', renderCallback) {
     targetTab.encryptedVault = snap.encryptedVault;
     targetTab.passwordHint = snap.passwordHint || "";
     targetTab.mindData = { id: "root", text: "🔒 " + snap.tabTitle, children: [] };
-    targetTab.history = [];
+    targetTab.history = [{ id: "root", text: "🔒 " + snap.tabTitle, children: [] }];
+    targetTab.historyIndex = 0;
     targetTab._isLocked = true;
     showLockScreen(targetTab);
   } else {
     targetTab.isEncrypted = false;
     targetTab.encryptedVault = null;
-    targetTab.mindData = JSON.parse(JSON.stringify(snap.mindData));
+    targetTab.mindData = deepClone(snap.mindData);
     targetTab.selectedIds = new Set([targetTab.mindData.id || "root"]);
     targetTab.focusedRootId = targetTab.mindData.id || "root";
-    targetTab.history = [JSON.stringify(targetTab.mindData)];
+    targetTab.history = [deepClone(targetTab.mindData)];
     targetTab.historyIndex = 0;
   }
 
@@ -147,7 +124,7 @@ export function restoreSnapshot(snapId, mode = 'new_tab', renderCallback) {
 }
 
 export async function exportSnapshotToFile(snapId) {
-  const snap = getAllSnapshots().find(s => s.id === snapId);
+  const snap = cachedSnapshots.find(s => s.id === snapId);
   if (!snap) return;
 
   const { filePackage } = await serializeTabToPackage({
@@ -163,8 +140,7 @@ export async function exportSnapshotToFile(snapId) {
     mindData: snap.mindData
   });
 
-  const dataStr = JSON.stringify(filePackage, null, 2);
-  const blob = new Blob([dataStr], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(filePackage, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `${snap.tabTitle}_备份_${formatDate(snap.timestamp, true)}.ymind`;
@@ -177,27 +153,30 @@ export function restartAutoSaveEngine(renderApp) {
   if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null; }
   const intervalSec = parseInt(getGlobalSettings().autoSaveInterval || "30", 10);
   if (isNaN(intervalSec) || intervalSec <= 0) return;
+
   autoSaveTimer = setInterval(() => {
+    // 🌟 并发竞态安全拦截：用户正在进行画布高频交互或编辑行内文本时，坚决延后快照写入
+    if (state.isInteracting || state.editingNodeId) return;
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) return;
+
     state.tabs.forEach(tab => {
-      // 🛡️ 严格排除加密或锁定中的文档
       if (tab.isDirty && !tab._isLocked && !tab.isEncrypted) {
-        if (window.requestIdleCallback) window.requestIdleCallback(() => createVersionSnapshot(tab, "auto"), { timeout: 1500 });
-        else setTimeout(() => createVersionSnapshot(tab, "auto"), 50);
+        createVersionSnapshot(tab, "auto");
       }
     });
   }, intervalSec * 1000);
 }
 
-export function initAutoSaveEngine(renderApp) {
+export async function initAutoSaveEngine(renderApp) {
+  await refreshSnapshotsCache();
   checkCrashRecovery(renderApp);
   restartAutoSaveEngine(renderApp);
 }
 
 function checkCrashRecovery(renderApp) {
-  const snapshots = getAllSnapshots();
-  if (snapshots.length === 0) return;
-
-  const latest = snapshots[0];
+  if (cachedSnapshots.length === 0) return;
+  const latest = cachedSnapshots[0];
   const diffMinutes = (Date.now() - latest.timestamp) / 60000;
 
   if (diffMinutes < 10 && latest.trigger === 'auto' && !latest.isEncrypted) {
@@ -222,9 +201,10 @@ function checkCrashRecovery(renderApp) {
   }
 }
 
-export function openVersionHistoryModal(renderApp) {
+export async function openVersionHistoryModal(renderApp) {
   const modal = document.getElementById("apple-history-modal");
   if (!modal) return;
+  await refreshSnapshotsCache();
   renderHistoryList("", renderApp);
   modal.classList.remove("hidden");
 }
@@ -239,7 +219,7 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
   const storageBadge = document.getElementById("history-storage-usage");
   if (!listContainer) return;
 
-  let snapshots = getAllSnapshots();
+  let snapshots = cachedSnapshots;
   if (filterKeyword) {
     const kw = filterKeyword.toLowerCase();
     snapshots = snapshots.filter(s => s.tabTitle.toLowerCase().includes(kw));
@@ -253,39 +233,34 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
       <div class="history-empty-state">
         <div class="empty-icon">🕒</div>
         <div class="empty-text">暂无历史备份快照</div>
-        <div class="empty-sub">普通导图将定时自动备份，加密文档受零泄露隔离保护</div>
+        <div class="empty-sub">支持 IndexedDB 异步百兆级持久化</div>
       </div>
     `;
     return;
   }
 
-  listContainer.innerHTML = snapshots.map(snap => {
-    const triggerBadge = getTriggerBadge(snap.trigger);
-    return `
-      <div class="history-snap-card" data-id="${snap.id}">
-        <div class="snap-header-row">
-          <div class="snap-title-group">
-            <span class="snap-doc-title">${escapeXml(snap.tabTitle)}</span>
-            ${triggerBadge}
-          </div>
-          <span class="snap-time-tag">${formatDate(snap.timestamp)}</span>
+  listContainer.innerHTML = snapshots.map(snap => `
+    <div class="history-snap-card" data-id="${snap.id}">
+      <div class="snap-header-row">
+        <div class="snap-title-group">
+          <span class="snap-doc-title">${escapeHtml(snap.tabTitle)}</span>
+          ${snap.trigger === 'manual' ? '<span class="snap-badge manual">📸 手动快照</span>' : '<span class="snap-badge auto">⏱️ 定时自动</span>'}
         </div>
-        <div class="snap-meta-row">
-          <span>结构: <strong>${getLayoutName(snap.layoutStructure)}</strong></span>
-          <span class="meta-dot">·</span>
-          <span>节点数: <strong>${snap.isEncrypted ? '🔒 密文封装' : snap.nodeCount}</strong></span>
-          <span class="meta-dot">·</span>
-          <span>状态: ${snap.isEncrypted ? '🔒 AES-256 加密' : '明文备份'}</span>
-        </div>
-        <div class="snap-actions-row">
-          <button class="snap-btn primary" data-action="restore-new" title="作为新标签页打开">打开快照</button>
-          <button class="snap-btn secondary" data-action="restore-overwrite" title="覆盖还原至当前工作区">覆盖还原</button>
-          <button class="snap-btn icon" data-action="export" title="导出为文件">💾 导出</button>
-          <button class="snap-btn danger-icon" data-action="delete" title="删除此快照">🗑️</button>
-        </div>
+        <span class="snap-time-tag">${formatDate(snap.timestamp)}</span>
       </div>
-    `;
-  }).join('');
+      <div class="snap-meta-row">
+        <span>节点数: <strong>${snap.isEncrypted ? '🔒 密文' : snap.nodeCount}</strong></span>
+        <span class="meta-dot">·</span>
+        <span>存储: IndexedDB (安全隔离)</span>
+      </div>
+      <div class="snap-actions-row">
+        <button class="snap-btn primary" data-action="restore-new">打开快照</button>
+        <button class="snap-btn secondary" data-action="restore-overwrite">覆盖还原</button>
+        <button class="snap-btn icon" data-action="export">💾 导出</button>
+        <button class="snap-btn danger-icon" data-action="delete">🗑️</button>
+      </div>
+    </div>
+  `).join('');
 
   listContainer.querySelectorAll('.history-snap-card').forEach(card => {
     const snapId = card.dataset.id;
@@ -300,7 +275,7 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
       } else if (action === 'restore-overwrite') {
         const ok = await appConfirm({
           title: "覆盖还原确认",
-          message: "确定要使用此历史快照覆盖当前正在编辑的导图吗？当前未保存的修改将被覆盖！",
+          message: "确定要使用此历史快照覆盖当前正在编辑的导图吗？",
           isDanger: true,
           confirmText: "确认覆盖"
         });
@@ -312,7 +287,7 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
       } else if (action === 'export') {
         await exportSnapshotToFile(snapId);
       } else if (action === 'delete') {
-        deleteSnapshot(snapId);
+        await deleteSnapshot(snapId);
         renderHistoryList(document.getElementById("history-search-input")?.value || "", renderApp);
         showToast("🗑️ 快照已删除");
       }
@@ -320,31 +295,11 @@ export function renderHistoryList(filterKeyword = "", renderApp) {
   });
 }
 
-function getTriggerBadge(trigger) {
-  if (trigger === 'manual') return `<span class="snap-badge manual">📸 手动快照</span>`;
-  if (trigger === 'crash_guard') return `<span class="snap-badge guard">🛡️ 崩溃防护</span>`;
-  return `<span class="snap-badge auto">⏱️ 定时自动</span>`;
-}
-
-function getLayoutName(layout) {
-  return {
-    "mindmap": "经典双向",
-    "logic-right": "向右逻辑",
-    "logic-left": "向左逻辑",
-    "org-down": "组织架构"
-  }[layout] || "思维导图";
-}
-
 function formatDate(ts, compact = false) {
   const d = new Date(ts);
+  const pad = n => n < 10 ? '0' + n : n;
   if (compact) {
     return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
   }
   return `${d.getMonth()+1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-function pad(n) { return n < 10 ? '0' + n : n; }
-
-function escapeXml(unsafe) {
-  return (unsafe || '').replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\'': '&apos;', '"': '&quot;' }[c]));
 }

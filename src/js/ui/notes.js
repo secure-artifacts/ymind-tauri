@@ -1,10 +1,133 @@
 import { state, findNode, saveSnapshot, getPrimarySelectedNode } from "../core/state.js";
 import { showToast } from "./dialog.js";
+import { bus, EVENTS } from "../core/event-bus.js";
 
 let activeNoteNodeId = null;
 let noteSaveTimer = null;
 
-export function initNotesDrawer(renderApp) {
+function escapeHtml(str) {
+  return String(str || "").replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
+}
+
+function sanitizeUrl(url) {
+  const clean = String(url || "").trim();
+  if (/^(https?:\/\/|mailto:|#|\/)/i.test(clean)) return clean;
+  return "#";
+}
+
+function renderInlineTokens(rawText) {
+  let s = escapeHtml(rawText);
+  // 行内行代码 `code`
+  s = s.replace(/`([^`\r\n]+)`/g, (_, code) => `<code>${code}</code>`);
+  // **粗体**
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // *斜体*
+  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  // [安全链接](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
+    return `<a href="${sanitizeUrl(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  });
+  return s;
+}
+
+// 🌟 O(N) 线性扫描词法状态机：彻底根除 ReDoS 正则灾难性回溯隐患
+export function renderMarkdown(md) {
+  if (!md || !md.trim()) return `<div class="empty-note-hint">暂无备注内容，点击上方「编辑」开始书写...</div>`;
+
+  const lines = md.split(/\r?\n/);
+  const out = [];
+  let inCodeBlock = false;
+  let codeLang = "";
+  let codeLines = [];
+  let inList = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 代码块围栏判定 ```
+    const fence = line.match(/^```([a-zA-Z0-9_-]*)/);
+    if (fence) {
+      if (!inCodeBlock) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        inCodeBlock = true;
+        codeLang = fence[1] || "";
+        codeLines = [];
+      } else {
+        inCodeBlock = false;
+        const safeLang = codeLang ? ` class="language-${escapeHtml(codeLang)}"` : "";
+        out.push(`<pre><code${safeLang}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    // 标题语法
+    if (/^###\s+(.*)/.test(line)) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<h3>${renderInlineTokens(line.replace(/^###\s+/, ""))}</h3>`);
+      continue;
+    }
+    if (/^##\s+(.*)/.test(line)) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<h2>${renderInlineTokens(line.replace(/^##\s+/, ""))}</h2>`);
+      continue;
+    }
+    if (/^#\s+(.*)/.test(line)) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<h1>${renderInlineTokens(line.replace(/^#\s+/, ""))}</h1>`);
+      continue;
+    }
+
+    // 引用语法
+    if (/^>\s+(.*)/.test(line)) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<blockquote>${renderInlineTokens(line.replace(/^>\s+/, ""))}</blockquote>`);
+      continue;
+    }
+
+    // 任务列表待办复选框
+    if (/^-\s+\[ \]\s+(.*)/.test(line)) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<div class="note-check"><input type="checkbox" disabled> ${renderInlineTokens(line.replace(/^-\s+\[ \]\s+/, ""))}</div>`);
+      continue;
+    }
+    if (/^-\s+\[[xX]\]\s+(.*)/.test(line)) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push(`<div class="note-check"><input type="checkbox" checked disabled> <del>${renderInlineTokens(line.replace(/^-\s+\[[xX]\]\s+/, ""))}</del></div>`);
+      continue;
+    }
+
+    // 无序列表项
+    if (/^-\s+(.*)/.test(line)) {
+      if (!inList) { out.push("<ul>"); inList = true; }
+      out.push(`<li>${renderInlineTokens(line.replace(/^-\s+/, ""))}</li>`);
+      continue;
+    }
+
+    if (inList) { out.push("</ul>"); inList = false; }
+
+    if (line.trim() === "") {
+      out.push("<br/>");
+    } else {
+      out.push(`<p>${renderInlineTokens(line)}</p>`);
+    }
+  }
+
+  if (inList) out.push("</ul>");
+  if (inCodeBlock) {
+    out.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  }
+
+  return out.join("");
+}
+
+export function initNotesDrawer() {
   const drawer = document.getElementById("notes-drawer");
   const closeBtn = document.getElementById("btn-close-notes");
   const textarea = document.getElementById("notes-textarea");
@@ -40,7 +163,7 @@ export function initNotesDrawer(renderApp) {
     const node = findNode(activeNoteNodeId, state.mindData);
     if (node) {
       node.note = textarea.value;
-      renderApp();
+      bus.emit(EVENTS.RENDER_APP);
       clearTimeout(noteSaveTimer);
       noteSaveTimer = setTimeout(() => saveSnapshot(), 600);
     }
@@ -53,13 +176,12 @@ export function initNotesDrawer(renderApp) {
     if (node) {
       delete node.note;
       saveSnapshot();
-      renderApp();
+      bus.emit(EVENTS.RENDER_APP);
     }
     switchTab("edit");
     showToast("🗑️ 备注已清除");
   });
 
-  // 工具栏 Markdown 快捷插入
   document.querySelectorAll(".note-tool-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       if (!textarea) return;
@@ -101,23 +223,4 @@ export function openNotesDrawer(node) {
 export function closeNotesDrawer() {
   document.getElementById("notes-drawer")?.classList.add("hidden");
   activeNoteNodeId = null;
-}
-
-function renderMarkdown(md) {
-  if (!md || !md.trim()) return `<div class="empty-note-hint">暂无备注内容，点击上方「编辑」开始书写...</div>`;
-  let html = md
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/\n### (.*?)(?=\n|$)/g, "<h3>$1</h3>")
-    .replace(/\n## (.*?)(?=\n|$)/g, "<h2>$1</h2>")
-    .replace(/\n# (.*?)(?=\n|$)/g, "<h1>$1</h1>")
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/\`\`\`([\s\S]*?)\`\`\`/g, "<pre><code>$1</code></pre>")
-    .replace(/\`(.*?)\`/g, "<code>$1</code>")
-    .replace(/- \[ \] (.*?)(?=\n|$)/g, "<div class=\"note-check\"><input type=\"checkbox\" disabled> $1</div>")
-    .replace(/- \[x\] (.*?)(?=\n|$)/g, "<div class=\"note-check\"><input type=\"checkbox\" checked disabled> <del>$1</del></div>")
-    .replace(/^- (.*?)(?=\n|$)/gm, "<li>$1</li>")
-    .replace(/^> (.*?)(?=\n|$)/gm, "<blockquote>$1</blockquote>")
-    .replace(/\n/g, "<br/>");
-  return html;
 }

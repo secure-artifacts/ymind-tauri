@@ -45,7 +45,7 @@ export function initIconPicker(renderApp) {
       chip.onclick = (e) => {
         e.stopPropagation();
         const char = chip.dataset.char;
-        const newIcon = (char === currentIcon) ? null : char; // 再次点击已选图标可反选取消
+        const newIcon = (char === currentIcon) ? null : char;
         applyIconToSelection(newIcon);
       };
     });
@@ -57,6 +57,7 @@ export function initIconPicker(renderApp) {
       const node = findNode(id, state.mindData);
       if (node) node.icon = iconChar;
     });
+    state.isLayoutDirty = true;
     saveSnapshot();
     renderApp();
     syncInspectorIcons();

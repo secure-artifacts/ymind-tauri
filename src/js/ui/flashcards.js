@@ -5,6 +5,12 @@ let cardDeck = [];
 let currentCardIndex = 0;
 let stats = { mastered: 0, review: 0, forgot: 0 };
 
+function escapeHtml(str) {
+  return String(str || "").replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
+}
+
 export function toggleRecallMode(renderApp) {
   state.isRecallMode = !state.isRecallMode;
   const btn = document.getElementById("btn-active-recall");
@@ -105,10 +111,11 @@ function renderCurrentCard() {
   
   let backAnswerHtml = "";
   if (card.children.length > 0) {
-    backAnswerHtml += "<ul class=\"card-answer-list\">" + card.children.map(c => `<li>${c}</li>`).join("") + "</ul>";
+    backAnswerHtml += "<ul class=\"card-answer-list\">" + card.children.map(c => `<li>${escapeHtml(c)}</li>`).join("") + "</ul>";
   }
   if (card.note) {
-    backAnswerHtml += `<div class="card-answer-note"><div class="card-note-badge">📝 详细备注</div>${card.note.replace(/\n/g, "<br/>")}</div>`;
+    const safeNote = escapeHtml(card.note).replace(/\n/g, "<br/>");
+    backAnswerHtml += `<div class="card-answer-note"><div class="card-note-badge">📝 详细备注</div>${safeNote}</div>`;
   }
   document.getElementById("card-back-answers").innerHTML = backAnswerHtml;
 
