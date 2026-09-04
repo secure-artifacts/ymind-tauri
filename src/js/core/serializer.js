@@ -1,56 +1,81 @@
 import { sanitizeFilename } from "../ui/dialog.js";
 import { encryptMindPayload, isEncryptedPackage } from "../storage/crypto.js";
 
-// 🌟 纯原生零依赖流式解析真实 .xmind (ZIP 格式) 中的 content.json
+// 🌟 纯原生 ZIP 标准解析引擎：利用 EOCD 逆向定位 Central Directory，彻底解决 compSize === 0 流式 XMind 文件解析失败
 export async function extractRealXMindZip(arrayBuffer) {
   const view = new DataView(arrayBuffer);
-  // 校验 ZIP Local File Header 签名 0x04034b50 (PK\x03\x04)
-  if (view.byteLength < 30 || view.getUint32(0, true) !== 0x04034b50) {
-    throw new Error("NOT_A_ZIP");
-  }
+  const totalLen = arrayBuffer.byteLength;
+  if (totalLen < 22) throw new Error("NOT_A_ZIP");
 
-  let offset = 0;
+  // 1. 从文件末尾反向定位 End of Central Directory Record (签名 0x06054b50)
+  let eocdOffset = -1;
+  const maxSearch = Math.min(totalLen, 65535 + 22);
+  for (let i = totalLen - 22; i >= totalLen - maxSearch; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset === -1) throw new Error("ZIP_EOCD_NOT_FOUND");
+
+  const totalEntries = view.getUint16(eocdOffset + 10, true);
+  const cdOffset = view.getUint32(eocdOffset + 16, true);
+
+  // 2. 遍历 Central Directory 获取精确的 Local Header 偏移量与压缩大小
+  let offset = cdOffset;
   const dec = new TextDecoder();
 
-  while (offset + 30 < arrayBuffer.byteLength) {
-    if (view.getUint32(offset, true) !== 0x04034b50) break;
+  for (let i = 0; i < totalEntries; i++) {
+    if (offset + 46 > totalLen || view.getUint32(offset, true) !== 0x02014b50) break;
 
-    const method = view.getUint16(offset + 8, true);
-    const compSize = view.getUint32(offset + 18, true);
-    const nameLen = view.getUint16(offset + 26, true);
-    const extraLen = view.getUint16(offset + 28, true);
-    const nameBytes = new Uint8Array(arrayBuffer, offset + 30, nameLen);
+    const method = view.getUint16(offset + 10, true);
+    const compSize = view.getUint32(offset + 20, true);
+    const nameLen = view.getUint16(offset + 28, true);
+    const extraLen = view.getUint16(offset + 30, true);
+    const commentLen = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+
+    const nameBytes = new Uint8Array(arrayBuffer, offset + 46, nameLen);
     const fileName = dec.decode(nameBytes);
 
-    const dataOffset = offset + 30 + nameLen + extraLen;
-
     if (fileName === "content.json") {
+      // 3. 准确定位 Local Header 下的真实数据块
+      if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) throw new Error("INVALID_LOCAL_HEADER");
+      const localNameLen = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
+      const dataOffset = localHeaderOffset + 30 + localNameLen + localExtraLen;
+
       const rawSlice = new Uint8Array(arrayBuffer, dataOffset, compSize);
       if (method === 0) {
         return JSON.parse(dec.decode(rawSlice));
       } else if (method === 8) {
-        // 标准 Deflate 原生解压流
         const ds = new DecompressionStream("deflate-raw");
         const stream = new Response(rawSlice).body.pipeThrough(ds);
         const jsonText = await new Response(stream).text();
         return JSON.parse(jsonText);
+      } else {
+        throw new Error("UNSUPPORTED_ZIP_METHOD");
       }
     }
-    offset = dataOffset + compSize;
+
+    offset += 46 + nameLen + extraLen + commentLen;
   }
+
   throw new Error("XMIND_CONTENT_NOT_FOUND");
 }
 
 export async function serializeTabToPackage(tab) {
-  const rootText = tab?.mindData?.text ? tab.mindData.text.trim() : (tab?.title || "思维导图");
-  const presetFilename = sanitizeFilename(rootText);
+  const defaultTitle = (tab?.isEncrypted) ? (tab?.title || "保密思维导图") : (tab?.mindData?.text ? tab.mindData.text.trim() : (tab?.title || "思维导图"));
+  const presetFilename = sanitizeFilename(defaultTitle);
   
   let finalPayload = tab?.mindData || { id: "root", text: "中心主题", children: [] };
-  let isEncrypted = Boolean(tab?.isEncrypted && tab?.password);
-  let encryptedPackage = null;
+  let isEncrypted = Boolean(tab?.isEncrypted);
+  let encryptedPackage = tab?.encryptedVault || null;
 
-  if (isEncrypted) {
+  if (isEncrypted && tab?.password && !tab?._isLocked) {
     encryptedPackage = await encryptMindPayload(finalPayload, tab.password, tab.passwordHint || "");
+  } else if (isEncrypted && !encryptedPackage) {
+    throw new Error("CANNOT_SAVE_UNLOCKED_WITHOUT_PASSWORD");
   }
 
   return {
@@ -67,6 +92,7 @@ export async function serializeTabToPackage(tab) {
       canvasBgColor: tab?.canvasBgColor || "studio-white",
       canvasBgPattern: tab?.canvasBgPattern || "dots",
       mindData: isEncrypted ? null : finalPayload,
+      versions: isEncrypted ? [] : (tab?.versions || []),
       encryptedVault: isEncrypted ? encryptedPackage : null
     },
     filenameWithExt: presetFilename + ".ymind",
@@ -131,10 +157,22 @@ export function normalizeMindNode(n) {
 
   let children = [];
   const rawChildren = n.children || data.children || n.topics || data.topics || n.subTopics || data.subTopics;
-  if (Array.isArray(rawChildren)) {
-    children = rawChildren.map(normalizeMindNode).filter(Boolean);
-  } else if (rawChildren && rawChildren.attached && Array.isArray(rawChildren.attached)) {
-    children = rawChildren.attached.map(normalizeMindNode).filter(Boolean);
+  if (Array.isArray(rawChildren) && rawChildren.length > 0) {
+    children = new Array(rawChildren.length);
+    let cCount = 0;
+    for (let i = 0; i < rawChildren.length; i++) {
+      const child = normalizeMindNode(rawChildren[i]);
+      if (child) children[cCount++] = child;
+    }
+    children.length = cCount;
+  } else if (rawChildren && rawChildren.attached && Array.isArray(rawChildren.attached) && rawChildren.attached.length > 0) {
+    children = new Array(rawChildren.attached.length);
+    let cCount = 0;
+    for (let i = 0; i < rawChildren.attached.length; i++) {
+      const child = normalizeMindNode(rawChildren.attached[i]);
+      if (child) children[cCount++] = child;
+    }
+    children.length = cCount;
   }
 
   return {
@@ -148,6 +186,8 @@ export function normalizeMindNode(n) {
     collapsed: Boolean(data.collapsed || n.collapsed || data.expand === false),
     fontSize: data.fontSize || n.fontSize || null,
     fontWeight: data.fontWeight || n.fontWeight || null,
+    fontStyle: data.fontStyle || n.fontStyle || null,
+    textDecoration: data.textDecoration || n.textDecoration || null,
     textColor: data.textColor || n.textColor || null,
     children: children
   };
@@ -155,14 +195,12 @@ export function normalizeMindNode(n) {
 
 export function deserializePackage(parsed, defaultFileName = "本地思维导图", filePath = null) {
   let rootRaw = parsed;
-  let loadedLayout = "mindmap", loadedPalette = "apple-classic", loadedLine = "curve", loadedBox = "squircle", loadedTheme = "studio-light";
+  let loadedLayout = "mindmap", loadedPalette = "apple-classic", loadedLine = "curve", loadedBox = "squircle", loadedTheme = "studio-light", loadedVersions = [];
   let loadedBgColor = "studio-white", loadedBgPattern = "dots";
   let isEncrypted = false;
   let encryptedVault = null;
 
-  if (Array.isArray(parsed) && parsed.length > 0) {
-    parsed = parsed[0];
-  }
+  if (Array.isArray(parsed) && parsed.length > 0) parsed = parsed[0];
 
   if (parsed && typeof parsed === "object") {
     if (parsed.filePackage && typeof parsed.filePackage === "object") parsed = parsed.filePackage;
@@ -172,17 +210,11 @@ export function deserializePackage(parsed, defaultFileName = "本地思维导图
       encryptedVault = parsed.encryptedVault || (isEncryptedPackage(parsed) ? parsed : null);
     }
 
-    if (parsed.mindData) {
-      rootRaw = parsed.mindData;
-    } else if (parsed.rootTopic) {
-      rootRaw = parsed.rootTopic;
-    } else if (parsed.root) {
-      rootRaw = parsed.root;
-    } else if (parsed.data) {
-      rootRaw = parsed.data;
-    } else if (parsed.topic) {
-      rootRaw = parsed.topic;
-    }
+    if (parsed.mindData) rootRaw = parsed.mindData;
+    else if (parsed.rootTopic) rootRaw = parsed.rootTopic;
+    else if (parsed.root) rootRaw = parsed.root;
+    else if (parsed.data) rootRaw = parsed.data;
+    else if (parsed.topic) rootRaw = parsed.topic;
 
     loadedLayout = parsed.layoutStructure || "mindmap";
     loadedPalette = parsed.colorPalette || "apple-classic";
@@ -191,6 +223,7 @@ export function deserializePackage(parsed, defaultFileName = "本地思维导图
     loadedTheme = parsed.canvasTheme || "studio-light";
     loadedBgColor = parsed.canvasBgColor || "studio-white";
     loadedBgPattern = parsed.canvasBgPattern || "dots";
+    loadedVersions = (!isEncrypted && Array.isArray(parsed.versions)) ? parsed.versions : [];
   }
 
   let fileDisplayName = defaultFileName;
@@ -214,6 +247,7 @@ export function deserializePackage(parsed, defaultFileName = "本地思维导图
     loadedBox: loadedBox,
     loadedTheme: loadedTheme,
     loadedBgColor: loadedBgColor,
-    loadedBgPattern: loadedBgPattern
+    loadedBgPattern: loadedBgPattern,
+    loadedVersions: loadedVersions
   };
 }

@@ -1,231 +1,714 @@
+/* ==========================================================================
+   YMind Pro Studio - 统一 Apple visionOS / macOS 超椭圆高定弹窗与动效系统
+   ========================================================================== */
+
+/* 🌟 核心模态框全局遮罩层 (Liquid Frosted Glass Overlay) */
+.apple-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9900;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(28px) saturate(190%) brightness(102%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%) brightness(102%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: appleBackdropFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes appleBackdropFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 🌟 统一 Apple 原生超椭圆高定模态卡片基类 (Squircle Floating Card) */
+.apple-modal-card {
+  width: 420px;
+  max-width: 92vw;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(48px) saturate(220%);
+  -webkit-backdrop-filter: blur(48px) saturate(220%);
+  border-radius: 26px;
+  -webkit-corner-smoothing: 0.62;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    0 32px 80px -12px rgba(15, 23, 42, 0.24),
+    0 12px 28px -4px rgba(15, 23, 42, 0.08),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.04);
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  animation: appleModalSpringIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 卡片顶部柔光反射弧 (Specular Sheen Rim) */
+.apple-modal-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 100%);
+  border-top-left-radius: 26px;
+  border-top-right-radius: 26px;
+  -webkit-corner-smoothing: 0.62;
+  pointer-events: none;
+}
+
+@keyframes appleModalSpringIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.91) translateY(24px);
+    filter: blur(6px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.012) translateY(-2px);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* 暗色系专属沉浸黑曜超椭圆卡片 */
+[data-theme="dark"] .apple-modal-card {
+  background: rgba(26, 31, 44, 0.90);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  box-shadow: 
+    0 36px 90px -10px rgba(0, 0, 0, 0.65),
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="dark"] .apple-modal-card::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.dialog-modal-card { width: 380px; }
+.vault-modal-card { width: 440px; }
+.history-modal-card { width: 620px; max-height: 84vh; }
+
+/* 🌟 模态框顶部 Header 布局与发光图标 */
+.apple-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 2;
+}
+
+.modal-header-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  -webkit-corner-smoothing: 0.62;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-header-icon:hover {
+  transform: scale(1.08) rotate(3deg);
+}
+
+.modal-header-icon.primary { background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); color: #0284c7; }
+.modal-header-icon.info { background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%); color: #00838f; }
+.modal-header-icon.success { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); color: #16a34a; }
+.modal-header-icon.warning { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); color: #d97706; }
+.modal-header-icon.danger { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); color: #dc2626; }
+
+.modal-title-wrap { flex: 1; min-width: 0; }
+.apple-modal-title { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.015em; line-height: 1.35; }
+.dialog-message { white-space: pre-line; font-size: 13.5px; color: var(--text-secondary); line-height: 1.55; }
+.apple-modal-body { display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 2; }
+
+/* 🌟 输入框与聚焦高光环 */
+.apple-modal-input {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  -webkit-corner-smoothing: 0.62;
+  padding: 9px 14px;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.apple-modal-input:focus {
+  border-color: var(--apple-blue);
+  background: #ffffff;
+  box-shadow: 0 0 0 3.5px var(--apple-blue-focus-ring), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* 🌟 操作按钮组与微拟物动量 */
+.apple-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  position: relative;
+  z-index: 2;
+}
+
+.modal-btn {
+  padding: 8px 18px;
+  border-radius: 12px;
+  -webkit-corner-smoothing: 0.62;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.modal-btn:active {
+  transform: scale(0.965);
+}
+
+.modal-btn-secondary {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.modal-btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+.modal-btn-primary {
+  background: linear-gradient(180deg, #0077ed 0%, #0062c4 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px -2px rgba(0, 113, 227, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.modal-btn-primary:hover {
+  background: linear-gradient(180deg, #007dfa 0%, #0069d4 100%);
+  box-shadow: 0 6px 18px -2px rgba(0, 113, 227, 0.52);
+  transform: translateY(-1px);
+}
+
+.modal-btn-danger {
+  background: linear-gradient(180deg, #ff3b30 0%, #dc2626 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px -2px rgba(255, 59, 48, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.modal-btn-danger:hover {
+  background: linear-gradient(180deg, #ff453a 0%, #e62222 100%);
+  box-shadow: 0 6px 18px -2px rgba(255, 59, 48, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   🍏 灵动微弹窗 (Dynamic Island HUD Capsule Toast) - 物理对齐与炫彩边缘
+   ========================================================================== */
+.apple-toast {
+  position: fixed;
+  top: 18px;
+  left: 0;
+  right: 0;
+  margin-left: auto;
+  margin-right: auto;
+  width: -moz-fit-content;
+  width: fit-content;
+  transform: translateY(-90px);
+  z-index: 999999;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 22px;
+  min-height: 42px;
+  max-width: 90vw;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(36px) saturate(200%) brightness(103%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%) brightness(103%);
+  color: var(--text-primary, #1d1d1f);
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 
+    0 18px 40px -8px rgba(0, 0, 0, 0.14),
+    0 4px 12px -2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+[data-theme="dark"] .apple-toast {
+  background: rgba(28, 35, 48, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff !important;
+  box-shadow: 
+    0 20px 48px -8px rgba(0, 0, 0, 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.35),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+[data-theme="dark"] .apple-toast .apple-toast-text {
+  color: #ffffff !important;
+}
+
+.apple-toast.show {
+  animation: toastSpringIn 0.44s cubic-bezier(0.175, 0.885, 0.32, 1.28) forwards;
+}
+
+.apple-toast.fade-out {
+  animation: toastSpringOut 0.24s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.apple-toast-icon {
+  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: iconSpringPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.3) 0.08s backwards;
+}
+
+@keyframes toastSpringIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-90px);
+    filter: blur(4px);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(7px);
+    filter: blur(0);
+  }
+  85% {
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes toastSpringOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-36px);
+  }
+}
+
+@keyframes iconSpringPop {
+  0% { transform: scale(0.4) rotate(-18deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* ==========================================================================
+   🍏 下落大通知条 (Dynamic Island Banner Drop) - 居中对齐杜绝发虚
+   ========================================================================== */
+.apple-banner-drop {
+  position: fixed;
+  top: 18px;
+  left: 0;
+  right: 0;
+  margin-left: auto;
+  margin-right: auto;
+  width: -moz-fit-content;
+  width: fit-content;
+  transform: translateY(-110px);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 360px;
+  max-width: 560px;
+  padding: 12px 22px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(36px) saturate(210%);
+  -webkit-backdrop-filter: blur(36px) saturate(210%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  -webkit-corner-smoothing: 0.62;
+  box-shadow: 
+    0 24px 60px -10px rgba(0, 0, 0, 0.2),
+    0 6px 18px -2px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+  opacity: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] .apple-banner-drop {
+  background: rgba(28, 33, 44, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: 0 28px 70px -10px rgba(0, 0, 0, 0.55), inset 0 1px 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.apple-banner-drop.show {
+  animation: bannerSpringIn 0.44s cubic-bezier(0.175, 0.885, 0.32, 1.25) forwards;
+}
+
+.apple-banner-drop.leave {
+  animation: bannerSpringOut 0.24s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes bannerSpringIn {
+  0% { opacity: 0; transform: translateY(-110px); }
+  65% { opacity: 1; transform: translateY(7px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bannerSpringOut {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-40px); }
+}
+
+.apple-banner-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  -webkit-corner-smoothing: 0.62;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+.apple-banner-icon-wrap.danger { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); color: #dc2626; }
+.apple-banner-icon-wrap.info { background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); color: #0284c7; }
+.apple-banner-icon-wrap.success { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); color: #16a34a; }
+
+.apple-banner-content { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.apple-banner-title { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1.3; }
+.apple-banner-message { font-size: 12.5px; color: var(--text-secondary); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ==========================================================================
+   🔒 密码锁屏全景高定海报 (Canvas Vault Lock Poster)
+   ========================================================================== */
+.canvas-vault-lock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: rgba(248, 250, 252, 0.85);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: appleBackdropFadeIn 0.28s ease-out;
+}
+
+[data-theme="dark"] .canvas-vault-lock-overlay {
+  background: rgba(15, 18, 24, 0.88);
+}
+
+.vault-poster-card {
+  width: 400px;
+  max-width: 90vw;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 28px;
+  -webkit-corner-smoothing: 0.62;
+  box-shadow: 
+    0 30px 80px -10px rgba(0, 0, 0, 0.18),
+    0 8px 24px -2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+  padding: 36px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: appleModalSpringIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.vault-poster-icon {
+  font-size: 46px;
+  margin-bottom: 14px;
+  filter: drop-shadow(0 6px 16px rgba(0, 113, 227, 0.3));
+  animation: iconSpringPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.25) backwards;
+}
+
+.vault-poster-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; letter-spacing: -0.015em; }
+.vault-poster-sub { font-size: 12.5px; color: var(--text-tertiary); margin-bottom: 22px; line-height: 1.5; }
+.vault-hint-box { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); color: #d97706; padding: 7px 14px; border-radius: 10px; font-size: 12px; margin-bottom: 18px; width: 100%; text-align: left; }
+.vault-poster-input-wrapper { display: flex; align-items: center; width: 100%; position: relative; }
+.vault-poster-input { width: 100%; height: 42px; background: rgba(0, 0, 0, 0.04); border: 1.5px solid rgba(0, 0, 0, 0.08); border-radius: 21px; padding: 0 46px 0 18px; font-size: 13.5px; outline: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.vault-poster-input:focus { background: #ffffff; border-color: var(--apple-blue); box-shadow: 0 0 0 3.5px var(--apple-blue-focus-ring); }
+.vault-poster-submit-btn { position: absolute; right: 4px; width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(180deg, #0077ed 0%, #0062c4 100%); color: #ffffff; border: none; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.16s; box-shadow: 0 2px 8px rgba(0, 113, 227, 0.35); }
+.vault-poster-submit-btn:hover { transform: scale(1.08); }
+.vault-error-hint { font-size: 12px; color: var(--apple-red); font-weight: 600; margin-top: 12px; }
+
+/* 🌟 Apple 经典弹性密码防暴力碰撞微晃动效 */
+.vault-shake-anim { animation: appleShake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+@keyframes appleShake {
+  10%, 90% { transform: translate3d(-4px, 0, 0); }
+  20%, 80% { transform: translate3d(6px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-7px, 0, 0); }
+  40%, 60% { transform: translate3d(7px, 0, 0); }
+}
+
+/* ==========================================================================
+   🎴 3D 抽认卡复习工坊 (3D Perspective Flashcard Workshop)
+   ========================================================================== */
+.flashcards-deck-card {
+  width: 720px;
+  max-width: 95vw;
+  height: 540px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(40px) saturate(220%);
+  border-radius: 28px;
+  -webkit-corner-smoothing: 0.62;
+  box-shadow: 0 32px 80px -10px rgba(0,0,0,0.3), inset 0 1px 1px 0 rgba(255,255,255,1);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 26px;
+  border: 1px solid rgba(255,255,255,0.9);
+  animation: appleModalSpringIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.flashcards-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.flashcards-title-badge { font-size: 15px; font-weight: 700; color: var(--apple-blue); display: flex; align-items: center; gap: 8px; }
+.flashcards-progress-wrap { flex: 1; max-width: 260px; display: flex; align-items: center; gap: 10px; }
+.flashcards-counter { font-size: 12px; font-weight: 700; color: var(--text-tertiary); }
+.flashcards-bar-track { flex: 1; height: 6px; background: rgba(0,0,0,0.06); border-radius: 4px; overflow: hidden; }
+.flashcards-bar-fill { height: 100%; width: 10%; background: linear-gradient(90deg, #0077ed, #34c759); transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+.flashcards-perspective-stage { flex: 1; perspective: 1200px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.flashcard-3d-box { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.48s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; }
+.flashcard-3d-box.is-flipped { transform: rotateY(180deg); }
+
+.flashcard-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 20px;
+  -webkit-corner-smoothing: 0.62;
+  padding: 30px 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid rgba(0, 113, 227, 0.16);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.06), inset 0 1px 1px rgba(255,255,255,0.9);
+}
+.flashcard-front { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); }
+.flashcard-back { background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); transform: rotateY(180deg); }
+
+.card-crumb-path { font-size: 11.5px; font-weight: 700; color: var(--apple-blue); text-transform: uppercase; letter-spacing: 0.05em; }
+.card-main-question { font-size: 25px; font-weight: 700; color: var(--text-primary); line-height: 1.4; margin-top: 12px; }
+.card-sub-hint { font-size: 13.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.5; }
+.card-flip-prompt { font-size: 11.5px; color: var(--text-tertiary); text-align: center; margin-top: auto; }
+.card-back-question { font-size: 17px; font-weight: 700; color: #16a34a; margin-bottom: 12px; }
+.card-back-scroll-area { flex: 1; overflow-y: auto; padding-right: 8px; }
+.card-answer-list { list-style: circle; padding-left: 20px; font-size: 14px; color: var(--text-primary); display: flex; flex-direction: column; gap: 6px; }
+.card-answer-note { margin-top: 12px; padding: 12px 16px; background: rgba(0,0,0,0.035); border-radius: 10px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+.card-note-badge { font-weight: 700; color: var(--apple-blue); font-size: 11.5px; margin-bottom: 4px; }
+
+.flashcards-footer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card-nav-btn { background: rgba(0,0,0,0.05); border: none; border-radius: 10px; -webkit-corner-smoothing: 0.62; padding: 8px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--text-secondary); transition: all 0.15s; }
+.card-nav-btn:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); }
+.flashcards-rating-dock { display: flex; align-items: center; gap: 8px; }
+.rate-pill { padding: 8px 14px; border-radius: 9999px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
+.rate-pill:hover { transform: translateY(-1px); }
+.rate-pill.forgot { background: #fee2e2; color: #dc2626; }
+.rate-pill.forgot:hover { background: #dc2626; color: #fff; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35); }
+.rate-pill.review { background: #fef3c7; color: #d97706; }
+.rate-pill.review:hover { background: #d97706; color: #fff; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.35); }
+.rate-pill.mastered { background: #dcfce7; color: #16a34a; }
+.rate-pill.mastered:hover { background: #16a34a; color: #fff; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35); }
+.card-flip-action-btn { background: linear-gradient(180deg, #0077ed 0%, #0062c4 100%); color: #fff; border: none; border-radius: 10px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 113, 227, 0.3); }
+
+/* ==========================================================================
+   🌟 右键菜单与下拉浮层高定 (Squircle Popover & Context Menu)
+   ========================================================================== */
 .dropdown-wrapper { position: relative; }
-.apple-popover { position: absolute; top: calc(100% + 8px); left: 0; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); border: 0.5px solid rgba(0, 0, 0, 0.1); border-radius: 12px; -webkit-corner-smoothing: 0.62; box-shadow: var(--shadow-popover); padding: 6px; min-width: 170px; z-index: 150; display: none; animation: popoverIn 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+.apple-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(36px) saturate(220%);
+  -webkit-backdrop-filter: blur(36px) saturate(220%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 16px;
+  -webkit-corner-smoothing: 0.62;
+  box-shadow: 
+    0 24px 60px -10px rgba(0, 0, 0, 0.18),
+    0 6px 18px -2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 1);
+  padding: 6px;
+  min-width: 180px;
+  z-index: 150;
+  display: none;
+  animation: popoverSpringIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes popoverSpringIn {
+  from { opacity: 0; transform: scale(0.93) translateY(-6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 .dropdown-wrapper.active .apple-popover { display: block; }
-@keyframes popoverIn { from { opacity: 0; transform: scale(0.95) translateY(-4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-.popover-item { padding: 7px 10px; font-size: 12px; color: var(--text-primary); border-radius: 6px; -webkit-corner-smoothing: 0.62; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 500; transition: all 0.12s ease; }
-.popover-item:hover { background: var(--apple-blue); color: #fff; }
-.popover-shortcut { margin-left: auto; font-size: 10px; color: var(--text-tertiary); font-weight: 600; }
+.popover-item {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  border-radius: 8px;
+  -webkit-corner-smoothing: 0.62;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  transition: all 0.12s ease;
+}
+.popover-item:hover {
+  background: linear-gradient(180deg, #0077ed 0%, #0062c4 100%);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3);
+}
+.popover-shortcut { margin-left: auto; font-size: 10.5px; color: var(--text-tertiary); font-weight: 600; }
 .popover-item:hover .popover-shortcut { color: rgba(255, 255, 255, 0.85); }
-.popover-separator { height: 0.5px; background: rgba(0, 0, 0, 0.08); margin: 6px 4px; }
-.apple-tag { padding: 1px 5px; border-radius: 4px; -webkit-corner-smoothing: 0.62; font-size: 10px; font-weight: 700; color: #fff; }
+.popover-separator { height: 1px; background: rgba(0, 0, 0, 0.06); margin: 6px 4px; }
+.apple-tag { padding: 1.5px 6px; border-radius: 5px; -webkit-corner-smoothing: 0.62; font-size: 10px; font-weight: 700; color: #fff; }
 .apple-tag.p1 { background: var(--apple-red); }
 .apple-tag.p2 { background: var(--apple-orange); }
 .apple-tag.p3 { background: var(--apple-blue); }
 .apple-tag.p4 { background: var(--apple-green); }
-.progress-dot { width: 8px; height: 8px; border-radius: 50%; -webkit-corner-smoothing: 0.62; }
+.progress-dot { width: 8px; height: 8px; border-radius: 50%; }
 .dot-25 { background: var(--apple-blue); }
 .dot-50 { background: var(--apple-orange); }
 .dot-75 { background: #af52de; }
 .dot-100 { background: var(--apple-green); }
-.apple-modal-overlay { position: fixed; inset: 0; z-index: 9900; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(24px) saturate(190%); display: flex; align-items: center; justify-content: center; }
-.apple-modal-card { width: 380px; max-width: 90vw; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(36px); border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 18px; -webkit-corner-smoothing: 0.62; box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.25); padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
-.dialog-modal-card { width: 360px; }
-.history-modal-card { width: 580px; max-height: 82vh; }
-.apple-modal-header { display: flex; align-items: center; gap: 12px; }
-.modal-header-icon { width: 34px; height: 34px; border-radius: 10px; -webkit-corner-smoothing: 0.62; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
-.modal-header-icon.primary { background: var(--apple-blue-subtle); color: var(--apple-blue); }
-.modal-header-icon.info { background: #e0f2fe; color: #0284c7; }
-.modal-header-icon.success { background: #dcfce7; color: #16a34a; }
-.modal-header-icon.warning { background: #fef3c7; color: #d97706; }
-.modal-header-icon.danger { background: #fee2e2; color: #dc2626; }
-.modal-title-wrap { flex: 1; }
-.apple-modal-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
-.dialog-message { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
-.apple-modal-body { display: flex; flex-direction: column; gap: 10px; }
-.apple-modal-input { width: 100%; border: 1px solid rgba(0, 0, 0, 0.15); background: rgba(255, 255, 255, 0.9); border-radius: 8px; -webkit-corner-smoothing: 0.62; padding: 8px 12px; font-size: 13px; outline: none; }
-.apple-modal-input:focus { border-color: var(--apple-blue); box-shadow: 0 0 0 3.5px rgba(0, 113, 227, 0.2); }
-.apple-modal-footer { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px; }
-.modal-btn { padding: 7px 16px; border-radius: 8px; -webkit-corner-smoothing: 0.62; font-size: 12.5px; font-weight: 600; cursor: pointer; border: none; }
-.modal-btn-secondary { background: rgba(0, 0, 0, 0.06); color: #334155; }
-.modal-btn-primary { background: linear-gradient(180deg, #0077ed 0%, #0062c4 100%); color: #fff; }
-.modal-btn-danger { background: linear-gradient(180deg, #ff3b30 0%, #dc2626 100%); color: #fff; }
-#apple-history-modal { z-index: 9900 !important; }
-#apple-recovery-modal { z-index: 9950 !important; }
-#apple-modal-overlay { z-index: 9950 !important; }
-#apple-system-dialog-overlay { z-index: 99999 !important; }
-.apple-toast { position: fixed; top: 64px; left: 50%; transform: translateX(-50%) translateY(-10px); background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(16px); color: #ffffff; padding: 8px 20px; border-radius: 24px; -webkit-corner-smoothing: 0.62; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); z-index: 10000; opacity: 0; pointer-events: none; transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1); }
-.apple-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.apple-toast.fade-out { opacity: 0; transform: translateX(-50%) translateY(-6px); }
 
-/* 🌟 节点属性专属浮层高定面板（严格受控显隐，杜绝常驻不关） */
-.node-attr-popover {
-  display: none;
-  width: 252px !important;
-  padding: 10px 12px !important;
-  flex-direction: column;
-  gap: 5px;
-  box-sizing: border-box !important;
-}
-
-/* 仅在激活时展开展示并应用 flex 布局 */
-.dropdown-wrapper.active .node-attr-popover {
-  display: flex !important;
-}
-
-/* 核心防御：未激活或明确 hidden 时强制关闭 */
-.dropdown-wrapper:not(.active) .node-attr-popover,
-.apple-popover.hidden {
-  display: none !important;
-}
-
-.popover-section-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-tertiary);
-  letter-spacing: 0.02em;
-  margin-bottom: 2px;
-  user-select: none;
-}
-.attr-quick-icons-row {
-  display: flex !important;
-  align-items: center !important;
-  gap: 5px !important;
-  margin-bottom: 3px !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-.attr-icon-chip {
-  width: 25px !important;
-  height: 25px !important;
-  border-radius: 6px !important;
-  -webkit-corner-smoothing: 0.62;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  font-size: 14px !important;
-  cursor: pointer !important;
-  background: rgba(0, 0, 0, 0.04) !important;
-  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
-  flex-shrink: 0 !important;
-}
-.attr-icon-chip:hover {
-  background: var(--apple-blue-subtle) !important;
-  transform: scale(1.16) !important;
-}
-.attr-more-icons-btn {
-  margin-left: auto !important;
-  background: transparent !important;
-  border: none !important;
-  font-size: 11.5px !important;
-  font-weight: 600 !important;
-  color: var(--apple-blue) !important;
-  cursor: pointer !important;
-  padding: 2px 4px !important;
-  border-radius: 4px !important;
-  white-space: nowrap !important;
-  flex-shrink: 0 !important;
-  line-height: 1 !important;
-}
-.attr-more-icons-btn:hover {
-  background: var(--apple-blue-subtle) !important;
-}
-.attr-menu-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
+/* 🌟 节点属性专属浮层面板 */
+.node-attr-popover { display: none; width: 260px !important; padding: 12px 14px !important; flex-direction: column; gap: 6px; box-sizing: border-box !important; }
+.dropdown-wrapper.active .node-attr-popover { display: flex !important; }
+.dropdown-wrapper:not(.active) .node-attr-popover, .apple-popover.hidden { display: none !important; }
+.popover-section-title { font-size: 11px; font-weight: 700; color: var(--text-tertiary); letter-spacing: 0.03em; margin-bottom: 3px; user-select: none; }
+.attr-quick-icons-row { display: flex !important; align-items: center !important; gap: 6px !important; margin-bottom: 4px !important; width: 100% !important; box-sizing: border-box !important; }
+.attr-icon-chip { width: 28px !important; height: 28px !important; border-radius: 8px !important; -webkit-corner-smoothing: 0.62; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-size: 15px !important; cursor: pointer !important; background: rgba(0, 0, 0, 0.04) !important; transition: all 0.14s cubic-bezier(0.16, 1, 0.3, 1) !important; flex-shrink: 0 !important; }
+.attr-icon-chip:hover { background: var(--apple-blue-subtle) !important; transform: scale(1.18) !important; }
+.attr-more-icons-btn { margin-left: auto !important; background: transparent !important; border: none !important; font-size: 12px !important; font-weight: 600 !important; color: var(--apple-blue) !important; cursor: pointer !important; padding: 2px 6px !important; border-radius: 6px !important; }
+.attr-more-icons-btn:hover { background: var(--apple-blue-subtle) !important; }
+.attr-menu-grid { display: flex; flex-direction: column; gap: 2px; width: 100%; }
 
 /* 🌟 标签管理器模态框 */
-.modal-section-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-.modal-tags-container { display: flex; flex-wrap: wrap; gap: 6px; min-height: 36px; max-height: 120px; overflow-y: auto; padding: 6px; background: rgba(0, 0, 0, 0.02); border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 8px; }
+.modal-section-label { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.modal-tags-container { display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; max-height: 120px; overflow-y: auto; padding: 8px; background: rgba(0, 0, 0, 0.025); border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 12px; -webkit-corner-smoothing: 0.62; }
 .modal-input-wrapper { width: 100%; }
-.apple-modal-tag { display: inline-flex; align-items: center; gap: 4px; background: #e0f2fe; color: #0284c7; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+.apple-modal-tag { display: inline-flex; align-items: center; gap: 5px; background: #e0f2fe; color: #0284c7; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; box-shadow: 0 1px 3px rgba(0, 113, 227, 0.12); }
 
 #apple-context-menu:not(.hidden) { display: block !important; }
 
-/* 🌟 节点 Markdown 备注抽屉面板 */
-.notes-drawer-panel { position: fixed; top: 50px; right: 0; bottom: 0; width: 380px; max-width: 90vw; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(28px); border-left: 1px solid var(--border-subtle); box-shadow: -8px 0 28px rgba(0,0,0,0.08); z-index: 180; display: flex; flex-direction: column; animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
-@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-.notes-drawer-header { height: 48px; padding: 0 16px; border-bottom: 1px solid rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.notes-header-left { display: flex; align-items: center; gap: 6px; overflow: hidden; }
-.notes-title-text { font-size: 13.5px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
-.notes-header-actions { display: flex; align-items: center; gap: 6px; }
-.notes-tab-group { display: flex; background: rgba(0,0,0,0.05); padding: 2px; border-radius: 6px; }
-.notes-tab-btn { padding: 3px 8px; font-size: 11px; font-weight: 600; border: none; background: transparent; color: var(--text-secondary); border-radius: 4px; cursor: pointer; }
-.notes-tab-btn.active { background: #fff; color: var(--apple-blue); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
-.notes-clear-btn { background: transparent; border: none; font-size: 11px; color: var(--text-tertiary); cursor: pointer; padding: 3px 6px; }
-.notes-clear-btn:hover { color: var(--apple-red); }
-.notes-toolbar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-bottom: 1px solid rgba(0,0,0,0.04); background: #fafafa; overflow-x: auto; }
-.note-tool-btn { padding: 3px 6px; font-size: 11px; font-weight: 600; border: 1px solid rgba(0,0,0,0.08); background: #fff; border-radius: 4px; cursor: pointer; color: var(--text-secondary); }
-.note-tool-btn:hover { background: var(--apple-blue-subtle); color: var(--apple-blue); border-color: rgba(0,113,227,0.3); }
-.notes-body-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
-.notes-editor-textarea { flex: 1; width: 100%; border: none; outline: none; resize: none; font-family: inherit; font-size: 13px; line-height: 1.6; color: var(--text-primary); background: transparent; }
-.notes-preview-rendered { flex: 1; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--text-primary); }
-.notes-preview-rendered h1, .notes-preview-rendered h2, .notes-preview-rendered h3 { margin: 8px 0 4px; color: var(--apple-blue); }
-.notes-preview-rendered pre { background: #0f172a; color: #38bdf8; padding: 8px 12px; border-radius: 8px; font-size: 12px; margin: 8px 0; overflow-x: auto; }
-.notes-preview-rendered blockquote { border-left: 3px solid var(--apple-blue); padding-left: 10px; margin: 6px 0; color: var(--text-secondary); font-style: italic; }
-.notes-preview-rendered li { margin-left: 18px; margin-bottom: 2px; }
-
-/* 🌟 记忆掩码测试模式 */
-.svg-node.recall-masked text.node-text { filter: blur(5.5px); opacity: 0.25; user-select: none; transition: all 0.2s; }
-.svg-node.recall-masked:hover text.node-text { filter: blur(2px); opacity: 0.6; }
-.svg-node.recall-masked { cursor: pointer; }
-
-/* 🌟 3D 抽认卡复习工坊 */
-.flashcards-deck-card { width: 680px; max-width: 94vw; height: 520px; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(36px); border-radius: 20px; -webkit-corner-smoothing: 0.62; box-shadow: 0 24px 64px rgba(0,0,0,0.28); display: flex; flex-direction: column; padding: 20px 24px; border: 1px solid rgba(255,255,255,0.8); }
-.flashcards-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.flashcards-title-badge { font-size: 14px; font-weight: 700; color: var(--apple-blue); display: flex; align-items: center; gap: 6px; }
-.flashcards-progress-wrap { flex: 1; max-width: 240px; display: flex; align-items: center; gap: 10px; }
-.flashcards-counter { font-size: 11.5px; font-weight: 700; color: var(--text-tertiary); }
-.flashcards-bar-track { flex: 1; height: 6px; background: rgba(0,0,0,0.06); border-radius: 4px; overflow: hidden; }
-.flashcards-bar-fill { height: 100%; width: 10%; background: linear-gradient(90deg, #0077ed, #34c759); transition: width 0.2s ease; }
-.flashcards-perspective-stage { flex: 1; perspective: 1200px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
-.flashcard-3d-box { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; }
-.flashcard-3d-box.is-flipped { transform: rotateY(180deg); }
-.flashcard-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 16px; -webkit-corner-smoothing: 0.62; padding: 28px 32px; display: flex; flex-direction: column; justify-content: space-between; border: 1.5px solid rgba(0,113,227,0.18); box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
-.flashcard-front { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); }
-.flashcard-back { background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%); transform: rotateY(180deg); }
-.card-crumb-path { font-size: 11px; font-weight: 600; color: var(--apple-blue); text-transform: uppercase; letter-spacing: 0.04em; }
-.card-main-question { font-size: 24px; font-weight: 700; color: var(--text-primary); line-height: 1.4; margin-top: 10px; }
-.card-sub-hint { font-size: 13px; color: var(--text-tertiary); margin-top: 8px; }
-.card-flip-prompt { font-size: 11px; color: var(--text-tertiary); text-align: center; margin-top: auto; }
-.card-back-question { font-size: 16px; font-weight: 700; color: #16a34a; margin-bottom: 12px; }
-.card-back-scroll-area { flex: 1; overflow-y: auto; padding-right: 6px; }
-.card-answer-list { list-style: circle; padding-left: 20px; font-size: 14px; color: var(--text-primary); display: flex; flex-direction: column; gap: 6px; }
-.card-answer-note { margin-top: 12px; padding: 10px 14px; background: rgba(0,0,0,0.03); border-radius: 8px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
-.card-note-badge { font-weight: 700; color: var(--apple-blue); font-size: 11px; margin-bottom: 4px; }
-.flashcards-footer-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.card-nav-btn { background: rgba(0,0,0,0.05); border: none; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-secondary); }
-.card-nav-btn:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); }
-.flashcards-rating-dock { display: flex; align-items: center; gap: 6px; }
-.rate-pill { padding: 7px 12px; border-radius: 20px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-.rate-pill.forgot { background: #fee2e2; color: #dc2626; }
-.rate-pill.forgot:hover { background: #dc2626; color: #fff; }
-.rate-pill.review { background: #fef3c7; color: #d97706; }
-.rate-pill.review:hover { background: #d97706; color: #fff; }
-.rate-pill.mastered { background: #dcfce7; color: #16a34a; }
-.rate-pill.mastered:hover { background: #16a34a; color: #fff; }
-.card-flip-action-btn { background: var(--apple-blue); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
-
-/* 🌟 Apple 密码保险箱高定 UI */
-.vault-modal-card { width: 420px; }
-.vault-input-group { display: flex; flex-direction: column; gap: 4px; }
-.vault-label { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
-.password-meter-track { height: 4px; background: rgba(0,0,0,0.06); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+/* 🌟 密码保险箱高定配置卡片 */
+.vault-input-group { display: flex; flex-direction: column; gap: 5px; }
+.vault-label { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.password-meter-track { height: 5px; background: rgba(0,0,0,0.06); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .password-meter-fill { height: 100%; width: 0%; transition: width 0.25s ease, background-color 0.25s ease; border-radius: 3px; }
-.password-strength-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; margin-top: 2px; }
+.password-strength-row { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; margin-top: 3px; }
 .strength-hint-text { color: var(--text-tertiary); font-weight: 600; }
-.vault-algo-tag { font-size: 9.5px; background: rgba(0,113,227,0.08); color: var(--apple-blue); padding: 1px 5px; border-radius: 4px; font-weight: 700; }
+.vault-algo-tag { font-size: 10px; background: rgba(0,113,227,0.08); color: var(--apple-blue); padding: 2px 7px; border-radius: 6px; font-weight: 700; }
 
-/* 🌟 画布全景毛玻璃锁屏态 */
-.canvas-vault-lock-overlay { position: absolute; inset: 0; z-index: 800; background: rgba(248, 250, 252, 0.82); backdrop-filter: blur(32px) saturate(180%); display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease-out; }
-.vault-poster-card { width: 380px; max-width: 90vw; background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(255, 255, 255, 0.9); border-radius: 20px; -webkit-corner-smoothing: 0.62; box-shadow: 0 20px 50px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.04); padding: 32px 28px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.vault-poster-icon { font-size: 40px; margin-bottom: 12px; filter: drop-shadow(0 4px 12px rgba(0,113,227,0.25)); }
-.vault-poster-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
-.vault-poster-sub { font-size: 12px; color: var(--text-tertiary); margin-bottom: 20px; }
-.vault-hint-box { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); color: #d97706; padding: 6px 12px; border-radius: 8px; font-size: 11.5px; margin-bottom: 16px; width: 100%; text-align: left; }
-.vault-poster-input-wrapper { display: flex; align-items: center; width: 100%; position: relative; }
-.vault-poster-input { width: 100%; height: 40px; background: rgba(0, 0, 0, 0.04); border: 1.5px solid rgba(0, 0, 0, 0.08); border-radius: 20px; padding: 0 44px 0 16px; font-size: 13px; outline: none; transition: all 0.2s; }
-.vault-poster-input:focus { background: #ffffff; border-color: var(--apple-blue); box-shadow: 0 0 0 3.5px rgba(0, 113, 227, 0.18); }
-.vault-poster-submit-btn { position: absolute; right: 4px; width: 32px; height: 32px; border-radius: 50%; background: var(--apple-blue); color: #ffffff; border: none; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.15s; }
-.vault-poster-submit-btn:hover { transform: scale(1.08); }
-.vault-error-hint { font-size: 11.5px; color: var(--apple-red); font-weight: 600; margin-top: 10px; }
+/* 🌟 节点 Markdown 备注抽屉面板 */
+.notes-drawer-panel { position: fixed; top: 44px; right: 0; bottom: 0; width: 440px; max-width: 92vw; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(36px) saturate(210%); -webkit-backdrop-filter: blur(36px) saturate(210%); border-left: 0.5px solid var(--border-subtle); box-shadow: -12px 0 36px rgba(0,0,0,0.09); z-index: 180; display: flex; flex-direction: column; animation: slideInRight 0.24s cubic-bezier(0.16, 1, 0.3, 1); box-sizing: border-box; }
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.notes-drawer-header { height: 46px; padding: 0 16px; border-bottom: 0.5px solid rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; background: #ffffff; }
+.notes-header-left { display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.notes-title-text { font-size: 13.5px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.notes-header-actions { display: flex; align-items: center; gap: 8px; }
+.notes-tab-group { display: flex; background: rgba(0,0,0,0.06); padding: 2.5px; border-radius: 8px; -webkit-corner-smoothing: 0.62; gap: 2px; }
+.notes-tab-btn { padding: 4px 10px; font-size: 11.5px; font-weight: 500; border: none; background: transparent; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all 0.14s ease; }
+.notes-tab-btn.active { background: #ffffff; color: var(--apple-blue); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.notes-clear-btn { background: transparent; border: none; font-size: 11px; color: var(--text-tertiary); cursor: pointer; padding: 3px 6px; border-radius: 4px; }
+.notes-clear-btn:hover { color: var(--apple-red); background: rgba(255, 59, 48, 0.08); }
 
-.vault-shake-anim { animation: appleShake 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-@keyframes appleShake {
-  10%, 90% { transform: translate3d(-3px, 0, 0); }
-  20%, 80% { transform: translate3d(5px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
-  40%, 60% { transform: translate3d(6px, 0, 0); }
-}
+.notes-toolbar { display: flex; align-items: center; flex-wrap: wrap; row-gap: 5px; column-gap: 4px; padding: 6px 14px; border-bottom: 0.5px solid rgba(0,0,0,0.06); background: #fbfbfd; flex-shrink: 0; }
+.note-tool-btn { height: 25px; min-width: 25px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 11.5px; font-weight: 600; border: 0.5px solid rgba(0,0,0,0.1); background: #ffffff; border-radius: 6px; -webkit-corner-smoothing: 0.62; cursor: pointer; color: var(--text-secondary); white-space: nowrap; box-shadow: 0 0.5px 1px rgba(0,0,0,0.04); transition: all 0.12s ease; user-select: none; }
+.note-tool-btn:hover { background: var(--apple-blue-subtle); color: var(--apple-blue); border-color: rgba(0,113,227,0.3); }
+.note-tool-sep { width: 1px; height: 14px; background: rgba(0, 0, 0, 0.08); margin: 0 2px; flex-shrink: 0; }
+
+.notes-body-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 16px 20px 8px; position: relative; min-height: 0; }
+.notes-editor-textarea { flex: 1; width: 100%; border: none; outline: none; resize: none; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; font-size: 13.5px; line-height: 1.7; color: var(--text-primary); background: transparent; }
+
+.notes-preview-rendered { flex: 1; overflow-y: auto; font-size: 13.5px; line-height: 1.7; color: var(--text-primary); padding-right: 4px; }
+.notes-preview-rendered::-webkit-scrollbar { width: 4px; }
+.notes-preview-rendered::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 4px; }
+
+.notes-preview-rendered h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 12px 0 8px; border-bottom: 1px solid rgba(0,0,0,0.08); padding-bottom: 4px; }
+.notes-preview-rendered h2 { font-size: 17px; font-weight: 700; color: var(--apple-blue); margin: 12px 0 6px; }
+.notes-preview-rendered h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 10px 0 4px; }
+.notes-preview-rendered h4, .notes-preview-rendered h5, .notes-preview-rendered h6 { font-size: 13.5px; font-weight: 600; color: var(--text-secondary); margin: 8px 0 3px; }
+.notes-preview-rendered p { margin: 6px 0; }
+.notes-preview-rendered strong { color: var(--text-primary); font-weight: 700; }
+.notes-preview-rendered em { color: var(--text-secondary); }
+
+.notes-table-container { width: 100%; overflow-x: auto; margin: 12px 0; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 10px; -webkit-corner-smoothing: 0.62; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+.notes-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; background: #ffffff; }
+.notes-table th { background: #f8fafc; font-weight: 700; color: var(--text-secondary); padding: 7px 12px; border-bottom: 1px solid rgba(0,0,0,0.08); }
+.notes-table td { padding: 7px 12px; border-bottom: 0.5px solid rgba(0,0,0,0.04); color: var(--text-primary); }
+.notes-table tr:last-child td { border-bottom: none; }
+.notes-table tr:hover td { background: rgba(0, 113, 227, 0.03); }
+
+.note-callout { border-radius: 12px; -webkit-corner-smoothing: 0.62; padding: 10px 14px; margin: 10px 0; border-left: 4px solid; font-size: 12.5px; line-height: 1.55; }
+.note-callout-header { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+.note-callout.tip { background: rgba(52, 199, 89, 0.08); border-color: var(--apple-green); color: #15803d; }
+.note-callout.note { background: var(--apple-blue-subtle); border-color: var(--apple-blue); color: var(--apple-blue); }
+.note-callout.warning { background: rgba(255, 149, 0, 0.08); border-color: var(--apple-orange); color: #c2410c; }
+.note-callout.danger { background: rgba(255, 59, 48, 0.08); border-color: var(--apple-red); color: #b91c1c; }
+.note-callout.todo { background: rgba(175, 82, 222, 0.08); border-color: var(--apple-purple); color: #7e22ce; }
+.note-callout-body { color: var(--text-primary); }
+
+.code-block-wrapper { border-radius: 12px; -webkit-corner-smoothing: 0.62; overflow: hidden; background: #0f172a; margin: 10px 0; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.code-block-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; background: rgba(255, 255, 255, 0.05); border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.code-lang-tag { font-size: 9.5px; font-weight: 700; color: #94a3b8; letter-spacing: 0.04em; }
+.btn-copy-code { background: transparent; border: none; color: #94a3b8; font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: all 0.12s; }
+.btn-copy-code:hover { color: #ffffff; background: rgba(255, 255, 255, 0.12); }
+.notes-preview-rendered pre { margin: 0; padding: 10px 14px; overflow-x: auto; }
+.notes-preview-rendered pre code { color: #38bdf8; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; line-height: 1.5; }
+
+.note-inline-code { background: rgba(0, 0, 0, 0.06); color: #c026d3; padding: 1.5px 5px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.note-highlight { background: #fef08a; color: #854d0e; padding: 1px 4px; border-radius: 3px; font-weight: 500; }
+.note-del { color: var(--text-tertiary); text-decoration: line-through; }
+.note-link { color: var(--apple-blue); text-decoration: none; font-weight: 500; }
+.note-link:hover { text-decoration: underline; }
+.note-inline-img { max-width: 100%; border-radius: 10px; margin: 8px 0; border: 1px solid var(--border-subtle); }
+.note-hr { height: 1px; border: none; background: rgba(0,0,0,0.08); margin: 16px 0; }
+.note-spacer { height: 8px; }
+
+.note-task-list { list-style: none !important; padding-left: 0 !important; margin: 6px 0; }
+.note-task-item { display: flex; align-items: flex-start; gap: 8px; margin: 5px 0; }
+.note-task-checkbox { margin-top: 3.5px; accent-color: var(--apple-blue); cursor: pointer; }
+.note-task-text.task-done { text-decoration: line-through; color: var(--text-tertiary); }
+.notes-preview-rendered blockquote { border-left: 3px solid var(--apple-blue); padding-left: 12px; margin: 8px 0; color: var(--text-secondary); font-style: italic; background: rgba(0, 113, 227, 0.02); padding-top: 2px; padding-bottom: 2px; border-radius: 0 8px 8px 0; }
+.notes-preview-rendered ul:not(.note-task-list), .notes-preview-rendered ol { padding-left: 20px; margin: 6px 0; }
+.notes-preview-rendered li { margin: 3px 0; }
+
+.notes-stats-bar { height: 32px; border-top: 0.5px solid rgba(0, 0, 0, 0.06); display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; padding-top: 4px; margin-top: auto; }
+.btn-start-note { margin-top: 14px; padding: 8px 20px; border-radius: 12px; -webkit-corner-smoothing: 0.62; background: linear-gradient(180deg, #0077ed 0%, #0062c4 100%); color: #fff; border: none; font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 113, 227, 0.35); transition: transform 0.12s ease; }
+.btn-start-note:hover { transform: translateY(-1px); }

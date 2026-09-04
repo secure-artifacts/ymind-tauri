@@ -21,8 +21,11 @@ export const bus = new EventBus();
 export const EVENTS = {
   RENDER_APP: "render:app",
   RENDER_CANVAS_ONLY: "render:canvas_only",
+  TRANSFORM_CHANGE: "camera:transform_change",
   SHOW_WORKSPACE: "view:workspace",
   SHOW_HOME: "view:home",
   SYNC_VAULT_UI: "vault:sync_ui",
-  CONFIG_CHANGE: "config:change"
+  CONFIG_CHANGE: "config:change",
+  SESSION_SAVE_REQUEST: "session:save_request",
+  SESSION_SAVE_IMMEDIATE: "session:save_immediate"
 };

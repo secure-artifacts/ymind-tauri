@@ -18,4 +18,4 @@ all_src_code.txt
 *.ymind
 # 本地私有自动化测试套件 (不提交 Git)
 src/js/test/
-
+test.py

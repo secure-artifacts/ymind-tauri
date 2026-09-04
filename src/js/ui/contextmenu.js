@@ -27,21 +27,6 @@ export function initContextMenu(renderApp) {
 
     const curTab = getActiveTab();
     let node = curTab?.spatialIndex?.pickNode(worldX, worldY, 8);
-    if (!node) {
-      const root = findNode(state.focusedRootId, state.mindData) || state.mindData;
-      function walk(n) {
-        if (n.x !== undefined && n.y !== undefined) {
-          if (worldX >= n.x - 8 && worldX <= n.x + n.width + 8 &&
-              worldY >= n.y - 8 && worldY <= n.y + n.height + 8) {
-            node = n;
-          }
-        }
-        if (n.children && !n.collapsed) {
-          for (let i = 0; i < n.children.length; i++) walk(n.children[i]);
-        }
-      }
-      walk(root);
-    }
 
     if (!node) {
       if (menu) menu.classList.add("hidden");

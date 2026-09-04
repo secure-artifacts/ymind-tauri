@@ -1,12 +1,13 @@
 import { state, getActiveTab, createNewTab } from "./js/core/state.js";
-import { render, resizeCanvas } from "./js/render/render.js";
+import { getGlobalSettings, saveGlobalSettings, applyAppTheme } from "./js/core/config.js";
+import { render, resizeCanvas, syncInlineEditorPosition } from "./js/render/render.js";
 import { renderOutliner } from "./js/render/outliner.js";
 import { camera, requestTransformUpdate, locateFocusedNode } from "./js/core/camera.js";
 import { initEventListeners, updateSelectionOnly } from "./js/ui/events.js";
 import { syncInspectorUi, applyCanvasThemeToBody, initInspectorEvents } from "./js/ui/inspector.js";
 import { renderHomeHub, initHomeEvents, recordRecentDoc, switchHomeTab } from "./js/ui/home.js";
 import { renderTabBar, initTabBar } from "./js/core/tab-manager.js";
-import { initNotesDrawer } from "./js/ui/notes.js";
+import { initNotesDrawer, closeNotesDrawer, syncNotesDrawerWithActiveNode } from "./js/ui/notes.js";
 import { initFlashcards, toggleRecallMode, openFlashcardModal } from "./js/ui/flashcards.js";
 import { initVaultManager, showLockScreen, hideLockScreen, updateSecurityDockStatus } from "./js/ui/vault.js";
 import { initContextMenu } from "./js/ui/contextmenu.js";
@@ -16,9 +17,22 @@ import { initAutoSaveEngine, openVersionHistoryModal, closeVersionHistoryModal, 
 import { initSettingsViewEvents } from "./js/ui/settings.js";
 import { appConfirm, showToast } from "./js/ui/dialog.js";
 import { bus, EVENTS } from "./js/core/event-bus.js";
+import { initMinimap, syncMinimapViewportBox } from "./js/render/minimap.js";
+import { restoreSession, saveSessionImmediate } from "./js/storage/session.js";
 
 const homeView = document.getElementById("home-view");
 const workspaceView = document.getElementById("workspace-view");
+
+export function toggleAppTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") || "light";
+  const next = cur === "dark" ? "light" : "dark";
+  const s = getGlobalSettings();
+  s.appTheme = next;
+  saveGlobalSettings(s);
+  applyAppTheme(next);
+  bus.emit(EVENTS.RENDER_APP);
+  showToast(next === "dark" ? "🌙 已切换为深色黑曜模式" : "☀️ 已切换为浅色明亮模式");
+}
 
 export function showWorkspace() {
   if (state.tabs.length === 0) createNewTab();
@@ -43,25 +57,35 @@ export function showWorkspace() {
 
   resizeCanvas();
   renderApp();
+  requestAnimationFrame(() => {
+    import("./js/render/minimap.js").then(m => {
+      m.updateMinimap();
+      m.syncMinimapViewportBox();
+    });
+  });
   syncInspectorUi();
   updateSecurityDockStatus();
 }
 
 export function showHome() {
+  const minimapBox = document.getElementById("minimap-viewport-box");
+  if (minimapBox) minimapBox.style.display = "none";
   const cur = getActiveTab();
   if (cur) {
     cur.camera = { ...camera.transform };
-    if (!cur._isLocked) {
+    if (!cur._isLocked && cur.filePath) {
       recordRecentDoc(cur.title, cur.mindData, cur.layoutStructure, cur.filePath, {
         colorPalette: cur.colorPalette,
         lineStyle: cur.lineStyle,
         boxStyle: cur.boxStyle,
         canvasBgColor: cur.canvasBgColor,
         canvasBgPattern: cur.canvasBgPattern
-      }, cur.isEncrypted, cur.password, cur.passwordHint, cur.encryptedVault, cur.camera);
+      }, cur.isEncrypted, null, cur.passwordHint, cur.encryptedVault, cur.camera);
     }
   }
   hideLockScreen();
+  closeNotesDrawer();
+
   if (workspaceView) workspaceView.classList.add("hidden");
   if (homeView) homeView.classList.remove("hidden");
   renderHomeHub(renderApp, showWorkspace);
@@ -81,6 +105,14 @@ function renderApp() {
   if (curTab?.isEncrypted && curTab?._isLocked) {
     outlinerView?.classList.add("hidden");
     viewport?.classList.remove("hidden");
+    closeNotesDrawer();
+    if (viewport) {
+      const c = document.getElementById("canvas-main");
+      if (c) {
+        const cx = c.getContext("2d");
+        if (cx) cx.clearRect(0, 0, c.width, c.height);
+      }
+    }
     showLockScreen(curTab);
     return;
   }
@@ -90,6 +122,7 @@ function renderApp() {
     outlinerView?.classList.remove("hidden");
     btnMind?.classList.remove("active-mode");
     btnOut?.classList.add("active-mode");
+    closeNotesDrawer();
     renderOutliner(renderApp);
   } else {
     outlinerView?.classList.add("hidden");
@@ -103,6 +136,7 @@ function renderApp() {
         updateSelectionOnly();
         syncInspectorUi();
         locateFocusedNode(id, true);
+        syncNotesDrawerWithActiveNode();
       },
       onRequestTransform: requestTransformUpdate
     });
@@ -121,6 +155,7 @@ function renderCanvasOnly() {
       updateSelectionOnly();
       syncInspectorUi();
       locateFocusedNode(id, true);
+      syncNotesDrawerWithActiveNode();
     },
     onRequestTransform: requestTransformUpdate
   });
@@ -132,19 +167,43 @@ bus.on(EVENTS.SHOW_WORKSPACE, showWorkspace);
 bus.on(EVENTS.SHOW_HOME, showHome);
 bus.on(EVENTS.SYNC_VAULT_UI, updateSecurityDockStatus);
 
+bus.on(EVENTS.TRANSFORM_CHANGE, (transform) => {
+  syncMinimapViewportBox();
+  syncInlineEditorPosition();
+  const zt = document.getElementById("txt-zoom-level");
+  if (zt) zt.innerText = `${Math.round(transform.scale * 100)}%`;
+});
+
 document.getElementById("btn-back-home")?.addEventListener("click", showHome);
 document.getElementById("btn-mode-mindmap")?.addEventListener("click", () => {
   const t = getActiveTab();
-  if (t) { t.viewMode = "mindmap"; renderApp(); }
+  if (t) {
+    t.viewMode = "mindmap";
+    resizeCanvas(true);
+    renderApp();
+    requestAnimationFrame(() => {
+      import("./js/render/minimap.js").then(m => {
+        m.updateMinimap();
+        m.syncMinimapViewportBox();
+      });
+    });
+  }
 });
 document.getElementById("btn-mode-outliner")?.addEventListener("click", () => {
   const t = getActiveTab();
   if (t?.isEncrypted && t?._isLocked) return;
-  if (t) { t.viewMode = "outliner"; renderApp(); }
+  closeNotesDrawer();
+  if (t) {
+    t.viewMode = "outliner";
+    requestAnimationFrame(() => {
+      renderApp();
+    });
+  }
 });
 document.getElementById("btn-mode-flashcards")?.addEventListener("click", () => {
   const t = getActiveTab();
   if (t?.isEncrypted && t?._isLocked) return;
+  closeNotesDrawer();
   openFlashcardModal();
 });
 document.getElementById("btn-active-recall")?.addEventListener("click", () => {
@@ -154,14 +213,21 @@ document.getElementById("btn-active-recall")?.addEventListener("click", () => {
 });
 
 document.getElementById("btn-open-settings")?.addEventListener("click", () => {
+  closeNotesDrawer();
   showHome();
   switchHomeTab("settings", renderApp, showWorkspace);
 });
 
-// 快照时光机
-document.getElementById("btn-open-history")?.addEventListener("click", () => openVersionHistoryModal(renderApp));
-document.getElementById("nav-btn-history")?.addEventListener("click", () => openVersionHistoryModal(renderApp));
+document.getElementById("btn-open-history")?.addEventListener("click", () => {
+  closeNotesDrawer();
+  openVersionHistoryModal(renderApp);
+});
+document.getElementById("nav-btn-history")?.addEventListener("click", () => {
+  closeNotesDrawer();
+  openVersionHistoryModal(renderApp);
+});
 document.getElementById("btn-history-close")?.addEventListener("click", closeVersionHistoryModal);
+
 document.getElementById("btn-create-manual-snap")?.addEventListener("click", () => {
   const cur = getActiveTab();
   if (cur && !cur._isLocked) {
@@ -188,10 +254,25 @@ document.getElementById("history-search-input")?.addEventListener("input", (e) =
 });
 
 window.addEventListener("beforeunload", (e) => {
-  const hasUnsaved = state.tabs.some(t => t.isDirty && !t._isLocked);
-  if (hasUnsaved) {
+  try {
+    saveSessionImmediate();
+    for (const t of state.tabs) {
+      if (!t._isLocked && t.mindData && t.filePath) {
+        recordRecentDoc(t.title, t.mindData, t.layoutStructure, t.filePath, {
+          colorPalette: t.colorPalette,
+          lineStyle: t.lineStyle,
+          boxStyle: t.boxStyle,
+          canvasBgColor: t.canvasBgColor,
+          canvasBgPattern: t.canvasBgPattern
+        }, t.isEncrypted, null, t.passwordHint, t.encryptedVault, t.camera);
+      }
+    }
+  } catch (err) {}
+
+  const hasUnsavedSecret = state.tabs.some(t => t.isEncrypted && t.isDirty && !t._isLocked);
+  if (hasUnsavedSecret) {
     e.preventDefault();
-    e.returnValue = "您有未保存的导图修改，确定要关闭退出吗？";
+    e.returnValue = "您有尚未保存至文件的加密保密文档，关闭后未保存的修改将被物理舍弃，确定退出吗？";
     return e.returnValue;
   }
 });
@@ -210,6 +291,7 @@ window.addEventListener("keydown", (e) => {
 });
 
 initTabBar();
+initMinimap();
 initEventListeners(renderApp);
 initHomeEvents(renderApp, showWorkspace);
 initNotesDrawer();
@@ -222,7 +304,23 @@ initAutoSaveEngine(renderApp);
 initSettingsViewEvents(renderApp);
 initInspectorEvents();
 
-showHome();
+document.getElementById("btn-theme-toggle")?.addEventListener("click", toggleAppTheme);
+document.getElementById("btn-theme-toggle-home")?.addEventListener("click", toggleAppTheme);
+
+(async () => {
+  applyAppTheme();
+  const hasRestored = await restoreSession();
+  if (hasRestored && state.tabs.length > 0) {
+    const cur = getActiveTab();
+    if (cur) {
+      camera.transform = { ...cur.camera };
+      applyCanvasThemeToBody(cur.canvasBgColor || "studio-white", cur.canvasBgPattern || "dots");
+    }
+    renderTabBar();
+    syncInspectorUi();
+  }
+  showHome();
+})();
 
 if (typeof ResizeObserver !== "undefined") {
   const vpElement = document.getElementById("viewport");
@@ -236,12 +334,21 @@ if (typeof ResizeObserver !== "undefined") {
 }
 
 document.getElementById("btn-toggle-minimap")?.addEventListener("click", () => {
-  document.getElementById("minimap-widget")?.classList.toggle("hidden");
+  const widget = document.getElementById("minimap-widget");
+  const btn = document.getElementById("btn-toggle-minimap");
+  if (!widget) return;
+  const isHidden = widget.classList.toggle("hidden");
+  btn?.classList.toggle("active", !isHidden);
+  if (!isHidden) {
+    requestAnimationFrame(() => {
+      import("./js/render/minimap.js").then(m => {
+        m.updateMinimap();
+        m.syncMinimapViewportBox();
+      });
+    });
+  }
 });
 
-// =========================================================================
-// 🌟 核心环境判定：同时兼容 Vite、Tauri dev 端口/协议与本地调试
-// =========================================================================
 const isDevMode = Boolean(
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV) ||
   window.location.protocol === "http:" ||
@@ -251,10 +358,7 @@ const isDevMode = Boolean(
 
 if (isDevMode) {
   import("./js/test/test-runner.js").then(({ runAllTests }) => {
-    // 1. 控制台全局自测函数
     window.runYMindTests = () => runAllTests(renderApp);
-
-    // 2. 全局物理按键捕获 (兼容 Mac Option+T 与 PC Alt+T)
     window.addEventListener("keydown", (e) => {
       const isT = e.code === "KeyT" || e.key.toLowerCase() === "t" || e.key === "†";
       if (e.altKey && isT) {
@@ -263,7 +367,6 @@ if (isDevMode) {
       }
     });
 
-    // 3. 动态将测试按钮安全注入至顶栏右侧（在开发态可见，生产态绝对为 0）
     function mountDevTestButton() {
       const barRight = document.querySelector(".top-bar-right");
       if (barRight && !document.getElementById("btn-run-all-tests")) {

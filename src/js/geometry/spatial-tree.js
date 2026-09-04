@@ -1,5 +1,6 @@
 export class QuadTree {
-  constructor(boundary = { x: -50000, y: -50000, width: 100000, height: 100000 }, capacity = 12, depth = 0, maxDepth = 7) {
+  // 🌟 容量提升为 32，最大深度提高到 9，完美应对 20,000 节点的大规模空间索引
+  constructor(boundary = { x: -80000, y: -80000, width: 160000, height: 160000 }, capacity = 32, depth = 0, maxDepth = 9) {
     this.boundary = boundary;
     this.capacity = capacity;
     this.depth = depth;
@@ -19,7 +20,7 @@ export class QuadTree {
     this.nw = new QuadTree({ x, y, width: w, height: h }, this.capacity, nextDepth, this.maxDepth);
     this.ne = new QuadTree({ x: x + w, y, width: w, height: h }, this.capacity, nextDepth, this.maxDepth);
     this.sw = new QuadTree({ x, y: y + h, width: w, height: h }, this.capacity, nextDepth, this.maxDepth);
-    this.se = new QuadTree({ x: x + w, y, width: w, height: h }, this.capacity, nextDepth, this.maxDepth);
+    this.se = new QuadTree({ x: x + w, y: y + h, width: w, height: h }, this.capacity, nextDepth, this.maxDepth);
     this.divided = true;
 
     const oldItems = this.items;

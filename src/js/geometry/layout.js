@@ -5,9 +5,9 @@ import { bus, EVENTS } from "../core/event-bus.js";
 export { PRIORITY_COLORS };
 
 export const SPACING_CONFIG = {
-  compact: { hGap: 46, vGap: 16 },
-  normal: { hGap: 66, vGap: 24 },
-  loose: { hGap: 96, vGap: 36 }
+  compact: { hGap: 34, vGap: 10 },
+  normal: { hGap: 46, vGap: 14 },
+  loose: { hGap: 68, vGap: 22 }
 };
 
 const measureCanvas = document.createElement("canvas");
@@ -30,22 +30,54 @@ export function invalidateFontCache() {
 
 bus.on(EVENTS.CONFIG_CHANGE, () => invalidateFontCache());
 
-export function measureTextWidth(text, fontSize = 13.5, fontWeight = "500") {
-  const fontFam = getActiveFontFamily();
+/**
+ * 🌟 快速字符宽度预估引擎 (Fast Math Estimator)
+ * 纯数学码点判定，避免在 20,000 节点冷启动时连续触发 20,000 次底层 OS 字形渲染引擎
+ */
+export function estimateTextWidthFast(text, fontSize) {
+  const raw = String(text ?? "");
+  if (!raw) return 0;
+  const lines = raw.split(/\r?\n/);
+  let maxW = 0;
+
+  for (let l = 0; l < lines.length; l++) {
+    const line = lines[l];
+    let w = 0;
+    for (let i = 0; i < line.length; i++) {
+      const code = line.charCodeAt(i);
+      if (code >= 0x20 && code <= 0x7e) {
+        w += fontSize * 0.58;
+      } else if (code > 0x7e) {
+        w += fontSize * 1.05;
+      }
+    }
+    if (w > maxW) maxW = w;
+  }
+  return Math.ceil(maxW);
+}
+
+export function measureTextWidth(text, fontSize = 13.5, fontWeight = "500", fontStyle = "normal", fastEstimate = true) {
   const rawText = String(text ?? "");
+  
+  // 对于冷启动或非短文本，优先使用纯数学预估，彻底杜绝主线程卡死
+  if (fastEstimate && rawText.length > 0) {
+    return estimateTextWidthFast(rawText, fontSize);
+  }
+
+  const fontFam = getActiveFontFamily();
   const lines = rawText.split(/\r?\n/);
   let maxW = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const cacheKey = `${line}_${fontSize}_${fontWeight}_${fontFam}`;
+    const cacheKey = `${line}_${fontSize}_${fontWeight}_${fontStyle}_${fontFam}`;
     let width = textWidthCache.get(cacheKey);
     if (width === undefined) {
-      measureCtx.font = `${fontWeight} ${fontSize}px ${fontFam}`;
+      measureCtx.font = `${fontStyle !== "normal" ? fontStyle + " " : ""}${fontWeight} ${fontSize}px ${fontFam}`;
       width = measureCtx.measureText(line).width;
-      if (textWidthCache.size >= 4000) {
+      if (textWidthCache.size >= 12000) {
         const iter = textWidthCache.keys();
-        for (let j = 0; j < 800; j++) textWidthCache.delete(iter.next().value);
+        for (let j = 0; j < 2500; j++) textWidthCache.delete(iter.next().value);
       }
       textWidthCache.set(cacheKey, width);
     }
@@ -61,14 +93,18 @@ export function measureNodeSize(node, level, focusedRootId) {
   const defFontWeight = isRoot ? "700" : (isLevel1 ? "600" : "500");
   const fontSize = node.fontSize ? parseFloat(node.fontSize) : defFontSize;
   const fontWeight = node.fontWeight || defFontWeight;
+  const fontStyle = node.fontStyle || "normal";
+  const textDecoration = node.textDecoration || "none";
   const fontFam = getActiveFontFamily();
 
-  const contentSignature = `${node.text}_${fontSize}_${fontWeight}_${node.icon || ""}_${node.priority || ""}_${node.progress || ""}_${node.note ? "1" : "0"}_${(node.tags || []).join(",")}_${fontFam}`;
+  const contentSignature = `${node.text}_${fontSize}_${fontWeight}_${fontStyle}_${textDecoration}_${node.icon || ""}_${node.priority || ""}_${node.progress || ""}_${node.note ? "1" : "0"}_${(node.tags || []).join(",")}_${fontFam}`;
   if (node._sizeSignature === contentSignature && node.width && node.height) return;
 
   const lines = String(node.text ?? "").split(/\r?\n/);
   const lineHeight = Math.round(fontSize * 1.38);
-  const textWidth = measureTextWidth(node.text, fontSize, fontWeight);
+  
+  // 🌟 使用毫秒级极速字形预估
+  const textWidth = estimateTextWidthFast(node.text, fontSize);
 
   let extraLeftWidth = 0;
   if (node.icon) extraLeftWidth += 24;
@@ -79,14 +115,14 @@ export function measureNodeSize(node, level, focusedRootId) {
   let tagsWidth = 0;
   if (node.tags && Array.isArray(node.tags) && node.tags.length > 0) {
     for (let i = 0; i < node.tags.length; i++) {
-      tagsWidth += measureTextWidth(String(node.tags[i]), 10, "600") + 18;
+      tagsWidth += estimateTextWidthFast(String(node.tags[i]), 9.5) + 18;
     }
     tagsWidth += 6;
   }
 
-  const padX = isRoot ? 26 : 20;
-  const padY = isRoot ? 16 : 13;
-  const minH = isRoot ? 48 : (isLevel1 ? 42 : 38);
+  const padX = isRoot ? 18 : 13;
+  const padY = isRoot ? 10 : 7;
+  const minH = isRoot ? 38 : (isLevel1 ? 32 : 28);
 
   node.contentWidth = extraLeftWidth + textWidth + tagsWidth;
   node.width = Math.ceil(node.contentWidth + padX * 2);
@@ -134,46 +170,48 @@ export function computeLayout(root, level = 0, focusedRootId = "root", structure
 
     if (structure === "org-down") {
       let childrenWidth = 0;
-      node.children.forEach((child, idx) => {
-        childrenWidth += child.treeWidth;
+      for (let idx = 0; idx < node.children.length; idx++) {
+        childrenWidth += node.children[idx].treeWidth;
         if (idx > 0) childrenWidth += hGap;
-      });
+      }
       node.treeWidth = Math.max(node.width, childrenWidth);
       node.treeHeight = node.height;
     } else if (structure === "mindmap" && node.id === focusedRootId) {
       node.rightChildren = [];
       node.leftChildren = [];
-      node.children.forEach((child, idx) => {
+      for (let idx = 0; idx < node.children.length; idx++) {
+        const child = node.children[idx];
         idx % 2 === 0 ? node.rightChildren.push(child) : node.leftChildren.push(child);
-      });
+      }
 
       let rHeight = 0, rWidth = 0;
-      node.rightChildren.forEach((child, idx) => {
+      for (let idx = 0; idx < node.rightChildren.length; idx++) {
+        const child = node.rightChildren[idx];
         rHeight += child.treeHeight;
         if (idx > 0) rHeight += vGap;
-        rWidth = Math.max(rWidth, child.treeWidth || child.width);
-      });
+        if (child.treeWidth > rWidth) rWidth = child.treeWidth;
+      }
       node.rightTreeHeight = Math.max(node.height, rHeight);
 
       let lHeight = 0, lWidth = 0;
-      node.leftChildren.forEach((child, idx) => {
+      for (let idx = 0; idx < node.leftChildren.length; idx++) {
+        const child = node.leftChildren[idx];
         lHeight += child.treeHeight;
         if (idx > 0) lHeight += vGap;
-        lWidth = Math.max(lWidth, child.treeWidth || child.width);
-      });
+        if (child.treeWidth > lWidth) lWidth = child.treeWidth;
+      }
       node.leftTreeHeight = Math.max(node.height, lHeight);
       node.treeHeight = Math.max(node.rightTreeHeight, node.leftTreeHeight);
-      // 🌟 修复：完整计算双向思维导图根节点包含双翼分支的总宽度
       node.treeWidth = node.width + (rWidth > 0 ? (hGap + rWidth) : 0) + (lWidth > 0 ? (hGap + lWidth) : 0);
     } else {
       let childrenHeight = 0, maxChildW = 0;
-      node.children.forEach((child, idx) => {
+      for (let idx = 0; idx < node.children.length; idx++) {
+        const child = node.children[idx];
         childrenHeight += child.treeHeight;
         if (idx > 0) childrenHeight += vGap;
-        maxChildW = Math.max(maxChildW, child.treeWidth || child.width);
-      });
+        if (child.treeWidth > maxChildW) maxChildW = child.treeWidth;
+      }
       node.treeHeight = Math.max(node.height, childrenHeight);
-      // 🌟 修复：完整计算单向延伸逻辑图的分支总跨度宽度
       node.treeWidth = node.width + (node.children.length > 0 ? (hGap + maxChildW) : 0);
     }
   }

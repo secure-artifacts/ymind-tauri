@@ -62,7 +62,7 @@
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
   box-sizing: border-box;
 }
 .inspector-content-scroll::-webkit-scrollbar { width: 5px; }
@@ -82,8 +82,7 @@
   box-sizing: border-box;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.inspector-accordion-header {
-  padding: 10px 14px;
+.inspector-accordion-header { padding: 8px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -104,10 +103,10 @@
 .inspector-accordion-item.open .accordion-chevron { transform: rotate(180deg); }
 
 .inspector-accordion-body {
-  padding: 12px 14px;
+  padding: 9px 12px;
   display: none;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
   box-sizing: border-box;
   overflow: visible;
   width: 100%;
@@ -382,3 +381,17 @@
   height: 100% !important;
   display: block !important;
 }
+
+/* 🌟 全局深色模式格式检查器高定 */
+[data-theme="dark"] .format-inspector-sidebar { background: rgba(20, 25, 36, 0.94); border-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .inspector-header { background: #141923; border-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .inspector-accordion-item { background: #181f2c; border-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .inspector-accordion-header { background: #181f2c; }
+[data-theme="dark"] .inspector-accordion-header:hover { background: #1e2638; }
+[data-theme="dark"] .struct-card { background: #121620; border-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .struct-card:hover { background: #1a2130; }
+[data-theme="dark"] .palette-chip { background: #121620; border-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .bg-pattern-card { background: #121620; border-color: rgba(255, 255, 255, 0.08); color: var(--text-secondary); }
+[data-theme="dark"] .inspector-icon-chip { background: #121620; border-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .segmented-style-row { background: rgba(255, 255, 255, 0.06); }
+[data-theme="dark"] .style-btn.active { background: #263044; color: var(--apple-blue); }

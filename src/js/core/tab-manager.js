@@ -1,3 +1,4 @@
+import { saveSessionImmediate } from "../storage/session.js";
 import { state, getActiveTab, createNewTab, closeTab } from "./state.js";
 import { camera, smartCenterOnSelectedNode } from "./camera.js";
 import { syncInspectorUi, applyCanvasThemeToBody } from "../ui/inspector.js";
@@ -5,6 +6,7 @@ import { recordRecentDoc } from "../ui/home.js";
 import { showLockScreen, hideLockScreenDOM, updateSecurityDockStatus } from "../ui/vault.js";
 import { appConfirm } from "../ui/dialog.js";
 import { bus, EVENTS } from "./event-bus.js";
+import { closeNotesDrawer } from "../ui/notes.js";
 
 const tabList = document.getElementById("tab-list");
 let isTabDelegationBound = false;
@@ -31,6 +33,9 @@ export async function closeTabWithConfirm(tabId, renderApp, showHome) {
     });
     if (!ok) return;
   }
+
+  // 🌟 关闭标签页前收起抽屉，杜绝悬挂指针
+  closeNotesDrawer();
 
   const remaining = closeTab(t.id);
   if (remaining === 0) {
@@ -94,7 +99,6 @@ export function renderTabBar() {
     `;
   }
 
-  // 🌟 DOM Diffing: 仅增量更新/复用元素，彻底停止 innerHTML = "" 产生的内存碎片
   const activeIds = new Set(state.tabs.map(t => t.id));
   Array.from(tabList.children).forEach(child => {
     if (!activeIds.has(child.dataset.tabId)) child.remove();
@@ -118,10 +122,11 @@ export function renderTabBar() {
     const dirtyDot = (t.isDirty || isDraft) ? `<span class="tab-dirty-indicator"></span>` : "";
     const lockIcon = t.isEncrypted ? `<span style="font-size:10px;margin-right:2px;">🔒</span>` : "";
 
+    const safeDisplayName = String(displayName).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
     item.innerHTML = `
       ${dirtyDot}
       ${lockIcon}
-      <span class="tab-title-text">${displayName}</span>
+      <span class="tab-title-text">${safeDisplayName}</span>
       <span class="tab-close-btn" data-close-id="${t.id}" title="关闭标签页">✕</span>
     `;
   });
@@ -132,7 +137,6 @@ export function renderTabBar() {
 
 export function initTabBar(renderApp, showHome) {
   if (!isTabDelegationBound && tabList) {
-    // 🌟 单一事件委托：挂载在容器上，永不重复注册
     tabList.addEventListener("click", async (e) => {
       const closeBtn = e.target.closest("[data-close-id]");
       if (closeBtn) {
@@ -146,6 +150,9 @@ export function initTabBar(renderApp, showHome) {
 
       const tabId = item.dataset.tabId;
       if (!tabId || tabId === state.activeTabId) return;
+
+      // 🌟 切换 Tab 时：立即落盘并关闭抽屉，避免串改不同 Tab 的数据
+      closeNotesDrawer();
 
       const prev = getActiveTab();
       if (prev) prev.camera = { ...camera.transform };
@@ -165,22 +172,16 @@ export function initTabBar(renderApp, showHome) {
       bus.emit(EVENTS.RENDER_APP);
       syncInspectorUi();
       updateSecurityDockStatus();
+      saveSessionImmediate();
     });
     isTabDelegationBound = true;
   }
 
   document.getElementById("btn-add-tab")?.addEventListener("click", () => {
-    const newTab = createNewTab();
-    newTab.filePath = null;
+    closeNotesDrawer();
+    const newTab = createNewTab(); // 智能分配 未命名 1 / 未命名 2
+    newTab.filePath = null; // 方案 B：未落盘草稿严禁写入最近物理文档
     newTab.isDirty = true;
-    recordRecentDoc(newTab.title, newTab.mindData, newTab.layoutStructure, null, {
-      colorPalette: newTab.colorPalette,
-      lineStyle: newTab.lineStyle,
-      boxStyle: newTab.boxStyle,
-      canvasTheme: newTab.canvasTheme,
-      canvasBgColor: newTab.canvasBgColor,
-      canvasBgPattern: newTab.canvasBgPattern
-    }, false);
     hideLockScreenDOM();
     renderTabBar();
     bus.emit(EVENTS.RENDER_APP);

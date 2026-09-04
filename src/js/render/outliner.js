@@ -1,9 +1,19 @@
-import { state, saveSnapshot, findParent, findNode } from "../core/state.js";
+import { state, findParent, findNode } from "../core/state.js";
+import { executeCommand, COMMANDS } from "../core/history.js";
 import { PRIORITY_COLORS } from "../data/palettes.js";
+import { openNotesDrawer } from "../ui/notes.js";
 
 let renderAppRef = null;
-let pendingFocusNodeId = null;
 let isComposingIME = false;
+
+const ROW_HEIGHT = 34;
+const POOL_SIZE = 45;
+
+let flatVisibleList = [];
+let domPool = [];
+let isPoolInitialized = false;
+let rafScrollId = null;
+let pendingFocusNodeId = null;
 
 export function renderOutliner(renderApp) {
   renderAppRef = renderApp;
@@ -11,120 +21,29 @@ export function renderOutliner(renderApp) {
   const outlinerContent = document.getElementById("outliner-content");
   if (!outlinerContent || !outlinerPanel) return;
 
-  // 监听 IME 中文/日文输入法合成状态
-  if (!outlinerContent._imeBound) {
+  if (!outlinerPanel._vScrollBound) {
+    outlinerPanel.addEventListener("scroll", onScrollDebounced, { passive: true });
     outlinerContent.addEventListener("compositionstart", () => { isComposingIME = true; });
     outlinerContent.addEventListener("compositionend", () => { isComposingIME = false; });
-    outlinerContent._imeBound = true;
+    outlinerPanel._vScrollBound = true;
   }
-
-  renderOutlinerDocument();
-}
-
-function flattenOutlinerTree(root) {
-  const list = [];
-  function traverse(node, parentNode, depth) {
-    list.push({ node, parentNode, depth });
-    if (node.children && node.children.length > 0 && !node.collapsed) {
-      node.children.forEach(child => traverse(child, node, depth + 1));
-    }
-  }
-  if (root.children) {
-    root.children.forEach(child => traverse(child, root, 0));
-  }
-  return list;
-}
-
-function renderOutlinerDocument() {
-  const outlinerContent = document.getElementById("outliner-content");
-  if (!outlinerContent) return;
-
-  // 🌟 输入法处于拼音/选词状态时，绝对禁止触发 DOM 重建与文本覆写
-  if (isComposingIME) return;
 
   const root = state.mindData;
   if (!root) return;
 
-  const activeEl = document.activeElement;
-  if (activeEl && outlinerContent.contains(activeEl)) {
-    if (activeEl.classList.contains("outliner-text-input")) {
-      const row = activeEl.closest(".outliner-row");
-      const nodeId = row?.dataset.id;
-      const targetNode = findNode(nodeId, root);
-      const val = activeEl.innerText.trim();
-      if (targetNode && val !== "" && val !== targetNode.text) {
-        targetNode.text = val;
-        saveSnapshot();
-      }
-      pendingFocusNodeId = nodeId;
-    } else if (activeEl.classList.contains("outliner-title-input")) {
-      const val = activeEl.innerText.trim();
-      if (val !== "" && val !== root.text) {
-        root.text = val;
-        saveSnapshot();
-      }
-    }
-  }
+  flatVisibleList = collectVisibleNodesFast(root);
+  setupVirtualContainer(outlinerContent, flatVisibleList.length);
+  initDomPool(outlinerContent);
+  updateVisibleSlice();
 
-  let rootHeader = outlinerContent.querySelector(".outliner-root-wrapper");
-  if (!rootHeader) {
-    rootHeader = document.createElement("div");
-    rootHeader.className = "outliner-root-wrapper";
-    rootHeader.innerHTML = `<div class="outliner-title-input" contenteditable="true" spellcheck="false">${root.text || "中心主题"}</div>`;
-    
-    const titleInput = rootHeader.querySelector(".outliner-title-input");
-    titleInput.onblur = () => {
-      if (isComposingIME) return;
-      const val = titleInput.innerText.trim();
-      if (val && val !== root.text) {
-        root.text = val;
-        saveSnapshot();
-        if (renderAppRef) renderAppRef();
-      }
-    };
-    titleInput.onkeydown = (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const newChild = { id: "node_" + Date.now(), text: "新主题", collapsed: false, children: [] };
-        if (!root.children) root.children = [];
-        root.children.unshift(newChild);
-        state.selectedIds = new Set([newChild.id]);
-        pendingFocusNodeId = newChild.id;
-        saveSnapshot();
-        if (renderAppRef) renderAppRef();
-      }
-    };
-    outlinerContent.innerHTML = "";
-    outlinerContent.appendChild(rootHeader);
-  } else {
-    const titleInput = rootHeader.querySelector(".outliner-title-input");
-    if (titleInput && document.activeElement !== titleInput && !isComposingIME) {
-      titleInput.innerText = root.text || "中心主题";
-    }
-  }
-
-  let listContainer = outlinerContent.querySelector(".outliner-list");
-  if (!listContainer) {
-    listContainer = document.createElement("div");
-    listContainer.className = "outliner-list";
-    outlinerContent.appendChild(listContainer);
-  }
-
-  // 🌟 动态弹性排版：移除定高裁剪，支持节点多行文本自然包裹
-  const flatList = flattenOutlinerTree(root);
-  listContainer.innerHTML = "";
-
-  for (let i = 0; i < flatList.length; i++) {
-    listContainer.appendChild(createRowElement(flatList[i]));
-  }
-
+  // 🌟 处理连续回车创建后的无缝聚焦
   if (pendingFocusNodeId) {
-    const rowToFocus = listContainer.querySelector(`.outliner-row[data-id="${pendingFocusNodeId}"] .outliner-text-input`);
-    if (rowToFocus) {
-      rowToFocus.focus();
-      const range = document.createRange();
+    const targetSlot = domPool.find(p => p.activeNodeId === pendingFocusNodeId);
+    if (targetSlot) {
+      targetSlot.textDiv.focus();
       const sel = window.getSelection();
-      range.selectNodeContents(rowToFocus);
+      const range = document.createRange();
+      range.selectNodeContents(targetSlot.textDiv);
       range.collapse(false);
       sel.removeAllRanges();
       sel.addRange(range);
@@ -133,130 +52,255 @@ function renderOutlinerDocument() {
   }
 }
 
-function createRowElement({ node, parentNode, depth }) {
-  const row = document.createElement("div");
-  row.className = `outliner-row ${state.selectedIds.has(node.id) ? "selected" : ""}`;
-  row.style.paddingLeft = `${depth * 22 + 4}px`;
-  row.style.minHeight = "34px";
-  row.style.height = "auto";
-  row.dataset.id = node.id;
+function collectVisibleNodesFast(root) {
+  const list = [];
+  if (!root.children || root.children.length === 0) return list;
 
-  const hasChildren = node.children && node.children.length > 0;
-  const collapseIcon = document.createElement("div");
-  collapseIcon.className = `outliner-toggle-icon ${hasChildren ? (node.collapsed ? "collapsed" : "expanded") : "leaf"}`;
-  collapseIcon.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
-  collapseIcon.onclick = (e) => {
-    e.stopPropagation();
-    if (hasChildren) {
-      node.collapsed = !node.collapsed;
-      saveSnapshot();
-      if (renderAppRef) renderAppRef();
+  const stack = [];
+  for (let i = root.children.length - 1; i >= 0; i--) {
+    stack.push({ node: root.children[i], parentNode: root, depth: 0 });
+  }
+
+  while (stack.length > 0) {
+    const item = stack.pop();
+    list.push(item);
+    const n = item.node;
+
+    if (n.children && n.children.length > 0 && !n.collapsed) {
+      for (let j = n.children.length - 1; j >= 0; j--) {
+        stack.push({ node: n.children[j], parentNode: n, depth: item.depth + 1 });
+      }
     }
-  };
-  row.appendChild(collapseIcon);
-
-  const bullet = document.createElement("div");
-  bullet.className = "outliner-bullet";
-  bullet.onclick = (e) => {
-    e.stopPropagation();
-    state.selectedIds = new Set([node.id]);
-    if (renderAppRef) renderAppRef();
-  };
-  row.appendChild(bullet);
-
-  const badgesWrap = document.createElement("div");
-  badgesWrap.className = "outliner-badges";
-
-  if (node.icon) {
-    const ic = document.createElement("span");
-    ic.className = "outliner-icon-tag";
-    ic.innerText = node.icon;
-    badgesWrap.appendChild(ic);
   }
+  return list;
+}
 
-  if (node.priority && PRIORITY_COLORS[node.priority]) {
-    const p = document.createElement("span");
-    p.className = "apple-tag";
-    p.style.background = PRIORITY_COLORS[node.priority].bg;
-    p.innerText = node.priority;
-    badgesWrap.appendChild(p);
-  }
+function setupVirtualContainer(content, totalCount) {
+  let rootHeader = content.querySelector(".outliner-root-wrapper");
+  if (!rootHeader) {
+    rootHeader = document.createElement("div");
+    rootHeader.className = "outliner-root-wrapper";
+    const safeTitle = String(state.mindData?.text || "中心主题").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+    rootHeader.innerHTML = `<div class="outliner-title-input" contenteditable="true" spellcheck="false">${safeTitle}</div>`;
+    content.innerHTML = "";
+    content.appendChild(rootHeader);
 
-  if (node.progress) {
-    const prg = document.createElement("span");
-    prg.className = "outliner-progress-pill";
-    prg.innerText = node.progress;
-    badgesWrap.appendChild(prg);
-  }
-
-  row.appendChild(badgesWrap);
-
-  const textDiv = document.createElement("div");
-  textDiv.className = "outliner-text-input";
-  textDiv.contentEditable = "true";
-  textDiv.spellcheck = false;
-  textDiv.innerText = node.text;
-
-  textDiv.onfocus = () => {
-    state.selectedIds = new Set([node.id]);
-  };
-
-  textDiv.onblur = () => {
-    if (isComposingIME) return;
-    const val = textDiv.innerText.trim();
-    if (val && val !== node.text) {
-      node.text = val;
-      saveSnapshot();
-      if (renderAppRef) renderAppRef();
-    }
-  };
-
-  textDiv.onkeydown = (e) => {
-    if (isComposingIME) return;
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      const newSibling = { id: "node_" + Date.now(), text: "新主题", collapsed: false, children: [] };
-      const idx = parentNode.children.findIndex(c => c.id === node.id);
-      parentNode.children.splice(idx + 1, 0, newSibling);
-      state.selectedIds = new Set([newSibling.id]);
-      pendingFocusNodeId = newSibling.id;
-      saveSnapshot();
-      if (renderAppRef) renderAppRef();
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      const idx = parentNode.children.findIndex(c => c.id === node.id);
-      if (e.shiftKey) {
-        const grandParent = findParent(parentNode.id, state.mindData);
-        if (grandParent) {
-          parentNode.children.splice(idx, 1);
-          const pIdx = grandParent.children.findIndex(c => c.id === parentNode.id);
-          grandParent.children.splice(pIdx + 1, 0, node);
-          pendingFocusNodeId = node.id;
-          saveSnapshot();
-          if (renderAppRef) renderAppRef();
-        }
-      } else if (idx > 0) {
-        const prevSibling = parentNode.children[idx - 1];
-        parentNode.children.splice(idx, 1);
-        if (!prevSibling.children) prevSibling.children = [];
-        prevSibling.children.push(node);
-        prevSibling.collapsed = false;
-        pendingFocusNodeId = node.id;
-        saveSnapshot();
+    const titleInput = rootHeader.querySelector(".outliner-title-input");
+    titleInput.onblur = () => {
+      if (isComposingIME) return;
+      const val = titleInput.innerText.trim();
+      if (val && val !== state.mindData.text) {
+        state.mindData.text = val;
         if (renderAppRef) renderAppRef();
       }
-    } else if (e.key === "Backspace" && textDiv.innerText.trim() === "") {
-      e.preventDefault();
-      const idx = parentNode.children.findIndex(c => c.id === node.id);
-      parentNode.children.splice(idx, 1);
-      const fallbackNode = idx > 0 ? parentNode.children[idx - 1] : parentNode;
-      state.selectedIds = new Set([fallbackNode.id]);
-      pendingFocusNodeId = fallbackNode.id;
-      saveSnapshot();
-      if (renderAppRef) renderAppRef();
+    };
+  } else {
+    const titleInput = rootHeader.querySelector(".outliner-title-input");
+    if (titleInput && document.activeElement !== titleInput && !isComposingIME) {
+      titleInput.innerText = state.mindData?.text || "中心主题";
     }
-  };
+  }
 
-  row.appendChild(textDiv);
-  return row;
+  let listContainer = content.querySelector(".outliner-list-virtual");
+  if (!listContainer) {
+    listContainer = document.createElement("div");
+    listContainer.className = "outliner-list-virtual";
+    listContainer.style.position = "relative";
+    listContainer.style.width = "100%";
+    content.appendChild(listContainer);
+  }
+  listContainer.style.height = `${Math.max(100, totalCount * ROW_HEIGHT)}px`;
+}
+
+function initDomPool(content) {
+  const listContainer = content.querySelector(".outliner-list-virtual");
+  if (!listContainer || isPoolInitialized) return;
+
+  listContainer.innerHTML = "";
+  domPool = [];
+
+  for (let i = 0; i < POOL_SIZE; i++) {
+    const row = document.createElement("div");
+    row.className = "outliner-row";
+    row.style.position = "absolute";
+    row.style.left = "0";
+    row.style.right = "0";
+    row.style.height = `${ROW_HEIGHT}px`;
+    row.style.display = "none";
+
+    const toggleIcon = document.createElement("div");
+    toggleIcon.className = "outliner-toggle-icon";
+    toggleIcon.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+    row.appendChild(toggleIcon);
+
+    const bullet = document.createElement("div");
+    bullet.className = "outliner-bullet";
+    row.appendChild(bullet);
+
+    const badges = document.createElement("div");
+    badges.className = "outliner-badges";
+    row.appendChild(badges);
+
+    const textDiv = document.createElement("div");
+    textDiv.className = "outliner-text-input";
+    textDiv.contentEditable = "true";
+    textDiv.spellcheck = false;
+    row.appendChild(textDiv);
+
+    const noteTag = document.createElement("span");
+    noteTag.className = "outliner-note-indicator hidden";
+    noteTag.innerText = "📝 备注";
+    row.appendChild(noteTag);
+
+    listContainer.appendChild(row);
+
+    domPool.push({
+      el: row,
+      toggleIcon,
+      bullet,
+      badges,
+      textDiv,
+      noteTag,
+      activeNodeId: null
+    });
+  }
+
+  isPoolInitialized = true;
+}
+
+function onScrollDebounced() {
+  if (rafScrollId) return;
+  rafScrollId = requestAnimationFrame(() => {
+    updateVisibleSlice();
+    rafScrollId = null;
+  });
+}
+
+function updateVisibleSlice() {
+  if (isComposingIME) return;
+  const panel = document.getElementById("outliner-view");
+  if (!panel || domPool.length === 0) return;
+
+  const scrollTop = panel.scrollTop;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 5);
+  const totalVisible = flatVisibleList.length;
+
+  for (let slot = 0; slot < POOL_SIZE; slot++) {
+    const poolItem = domPool[slot];
+    const dataIndex = startIndex + slot;
+
+    if (dataIndex >= totalVisible) {
+      poolItem.el.style.display = "none";
+      continue;
+    }
+
+    const { node, parentNode, depth } = flatVisibleList[dataIndex];
+    const rowEl = poolItem.el;
+
+    rowEl.style.display = "flex";
+    rowEl.style.transform = `translate3d(0, ${dataIndex * ROW_HEIGHT}px, 0)`;
+    rowEl.style.paddingLeft = `${depth * 24 + 10}px`;
+    rowEl.classList.toggle("selected", state.selectedIds.has(node.id));
+    rowEl.dataset.id = node.id;
+    poolItem.activeNodeId = node.id;
+
+    const hasChildren = node.children && node.children.length > 0;
+    poolItem.toggleIcon.className = `outliner-toggle-icon ${hasChildren ? (node.collapsed ? "collapsed" : "expanded") : "leaf"}`;
+    poolItem.toggleIcon.onclick = (e) => {
+      e.stopPropagation();
+      if (hasChildren) {
+        node.collapsed = !node.collapsed;
+        flatVisibleList = collectVisibleNodesFast(state.mindData);
+        setupVirtualContainer(document.getElementById("outliner-content"), flatVisibleList.length);
+        updateVisibleSlice();
+      }
+    };
+
+    poolItem.bullet.onclick = (e) => {
+      e.stopPropagation();
+      state.selectedIds = new Set([node.id]);
+      updateVisibleSlice();
+      if (renderAppRef) renderAppRef();
+    };
+
+    poolItem.badges.innerHTML = "";
+    if (node.icon) {
+      const ic = document.createElement("span");
+      ic.className = "outliner-icon-tag";
+      ic.innerText = node.icon;
+      poolItem.badges.appendChild(ic);
+    }
+    if (node.priority && PRIORITY_COLORS[node.priority]) {
+      const p = document.createElement("span");
+      p.className = "apple-tag";
+      p.style.background = PRIORITY_COLORS[node.priority].bg;
+      p.innerText = node.priority;
+      poolItem.badges.appendChild(p);
+    }
+    if (node.progress) {
+      const prg = document.createElement("span");
+      prg.className = "outliner-progress-pill";
+      prg.innerText = node.progress;
+      poolItem.badges.appendChild(prg);
+    }
+
+    if (document.activeElement !== poolItem.textDiv) {
+      poolItem.textDiv.innerText = node.text || "";
+    }
+
+    poolItem.textDiv.onfocus = () => {
+      state.selectedIds = new Set([node.id]);
+      rowEl.classList.add("selected");
+    };
+
+    poolItem.textDiv.onblur = () => {
+      if (isComposingIME) return;
+      const val = poolItem.textDiv.innerText.trim();
+      if (val !== node.text) {
+        executeCommand({
+          type: COMMANDS.SET_TEXT,
+          nodeId: node.id,
+          oldText: node.text,
+          newText: val || "新主题"
+        });
+      }
+    };
+
+    // 🌟 核心修复：严防 IME 状态下误触发 Enter，并在创建后自动无缝转移光标
+    poolItem.textDiv.onkeydown = (e) => {
+      if (isComposingIME || e.isComposing || e.keyCode === 229) return;
+
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const newSibling = {
+          id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+          text: "",
+          children: []
+        };
+        const idx = parentNode.children.findIndex(c => c.id === node.id);
+        executeCommand({
+          type: COMMANDS.INSERT_NODE,
+          parentId: parentNode.id,
+          index: idx + 1,
+          node: newSibling
+        });
+
+        pendingFocusNodeId = newSibling.id;
+        state.selectedIds = new Set([newSibling.id]);
+        flatVisibleList = collectVisibleNodesFast(state.mindData);
+        setupVirtualContainer(document.getElementById("outliner-content"), flatVisibleList.length);
+        renderOutliner(renderAppRef);
+      }
+    };
+
+    if (node.note) {
+      poolItem.noteTag.classList.remove("hidden");
+      poolItem.noteTag.onclick = (e) => {
+        e.stopPropagation();
+        openNotesDrawer(node);
+      };
+    } else {
+      poolItem.noteTag.classList.add("hidden");
+    }
+  }
 }

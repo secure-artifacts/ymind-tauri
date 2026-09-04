@@ -46,6 +46,12 @@ fn open_mindmap_file() -> Result<Option<(String, String)>, String> {
     }
 }
 
+
+#[tauri::command]
+fn read_file_content(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -53,7 +59,7 @@ fn main() {
                 window.maximize()?;
                 Ok(())
         })
-        .invoke_handler(tauri::generate_handler![save_mindmap_file, open_mindmap_file])
+        .invoke_handler(tauri::generate_handler![read_file_content, save_mindmap_file, open_mindmap_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

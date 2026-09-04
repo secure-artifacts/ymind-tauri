@@ -13,8 +13,7 @@
 }
 
 /* 🌟 顶栏：macOS Sequoia 统一毛玻璃工具条 */
-.ymind-top-bar { 
-  height: 50px; 
+.ymind-top-bar { height: 44px; 
   background: rgba(255, 255, 255, 0.88); 
   backdrop-filter: blur(28px) saturate(190%); 
   -webkit-backdrop-filter: blur(28px) saturate(190%);
@@ -285,8 +284,7 @@
 /* ==========================================================================
    🌟 紧凑联动标签栏体系（彻底消除幽灵空白，贴身自适应对齐）
    ========================================================================== */
-.apple-tab-bar { 
-  height: 36px; 
+.apple-tab-bar { height: 32px; 
   background: #fbfbfd; 
   border-bottom: 0.5px solid rgba(0, 0, 0, 0.08); 
   display: flex; 
@@ -311,8 +309,7 @@
 .tab-list::-webkit-scrollbar { display: none; }
 
 /* 单个标签卡片：由内容自然决定宽度，随文字弹性自适应 */
-.apple-tab-item { 
-  height: 26px; 
+.apple-tab-item { height: 24px; 
   width: auto !important;
   max-width: 180px; 
   flex: 0 0 auto !important; 
@@ -562,7 +559,7 @@
   min-height: 100%;
   display: flex;
   justify-content: center;
-  padding: 40px 32px 140px;
+  padding: 24px 28px 100px;
   box-sizing: border-box;
 }
 
@@ -574,9 +571,7 @@
   box-sizing: border-box;
 }
 
-.outliner-root-wrapper {
-  margin-bottom: 24px;
-  padding-bottom: 16px;
+.outliner-root-wrapper { margin-bottom: 16px; padding-bottom: 10px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.07);
 }
 
@@ -718,10 +713,316 @@
 
 /* 🌟 精准匹配 Canvas 渲染基线的行内编辑器增强 */
 .inline-editor {
-  text-align: left !important;
+  text-align: center !important;
   padding: 1px 4px !important;
   border-radius: 5px !important;
   margin: 0 !important;
   border: 1px solid var(--apple-blue) !important;
   box-shadow: 0 0 0 2.5px var(--apple-blue-focus-ring) !important;
 }
+
+/* 🌟 大纲文档树状层级辅助线与交互强化 */
+.outliner-document {
+  position: relative;
+}
+
+.outliner-row {
+  position: relative;
+  border-radius: 6px;
+  margin: 1px 0;
+  padding-right: 8px;
+}
+
+.outliner-row:hover {
+  background-color: rgba(0, 0, 0, 0.035) !important;
+}
+
+.outliner-row.selected {
+  background-color: var(--apple-blue-subtle) !important;
+}
+
+.outliner-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: rgba(0, 0, 0, 0.07);
+  pointer-events: none;
+}
+
+.outliner-bullet {
+  position: relative;
+  cursor: grab;
+  transition: transform 0.15s ease;
+}
+
+.outliner-bullet:active {
+  cursor: grabbing;
+}
+
+.outliner-text-input {
+  min-height: 24px;
+  caret-color: var(--apple-blue);
+  word-break: break-word;
+  transition: background-color 0.12s;
+}
+
+.outliner-note-indicator {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  margin-left: 4px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.outliner-note-indicator:hover {
+  background: var(--apple-blue-subtle);
+  color: var(--apple-blue);
+}
+
+/* ==========================================================================
+   🌟 专注模式沉浸式面包屑悬浮胶囊导航 (Apple Floating Breadcrumb Capsule)
+   ========================================================================== */
+.apple-breadcrumb-capsule {
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  z-index: 85;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 0.5px solid rgba(0, 0, 0, 0.12);
+  border-radius: 20px;
+  -webkit-corner-smoothing: 0.62;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 4px 6px 4px 10px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeInDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  max-width: calc(100vw - 420px);
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.breadcrumb-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--apple-blue);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.breadcrumb-trail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  max-width: 600px;
+}
+.breadcrumb-trail::-webkit-scrollbar { display: none; }
+
+.breadcrumb-item {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+.breadcrumb-item:hover {
+  background: var(--apple-blue-subtle);
+  color: var(--apple-blue);
+}
+.breadcrumb-item.active {
+  color: var(--text-primary);
+  font-weight: 700;
+  cursor: default;
+}
+.breadcrumb-item.active:hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.breadcrumb-sep {
+  color: var(--text-quaternary);
+  font-size: 11px;
+  margin: 0 -1px;
+  user-select: none;
+}
+
+.apple-pill-btn {
+  border: none;
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--apple-blue);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.apple-pill-btn:hover {
+  background: var(--apple-blue);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3);
+}
+
+/* ==========================================================================
+   🌟 全局搜索浮动毛玻璃胶囊工具条 (Floating Search Bar Capsule)
+   ========================================================================== */
+.apple-search-bar {
+  position: fixed;
+  top: 56px;
+  right: 48px;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 0.5px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  -webkit-corner-smoothing: 0.62;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+  padding: 6px 10px;
+  width: 320px;
+  box-sizing: border-box;
+  animation: searchSlideIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: right 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes searchSlideIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.workspace-body-layout.sidebar-open ~ .apple-search-bar,
+body:has(#format-sidebar:not(.collapsed)) .apple-search-bar {
+  right: 360px;
+}
+
+.apple-search-bar .search-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.apple-search-bar input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary);
+  padding: 2px 0;
+}
+.apple-search-bar input::placeholder {
+  color: var(--text-quaternary);
+}
+
+.search-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.search-nav-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.search-nav-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+
+.search-close-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.search-close-btn:hover {
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--apple-red);
+}
+
+/* 🌟 防御小地图在过渡或未加载时裸露占位框 */
+.minimap-widget.hidden,
+#home-view:not(.hidden) ~ * #minimap-widget,
+#outliner-view:not(.hidden) ~ * #minimap-widget {
+  display: none !important;
+}
+.minimap-viewport-box {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+/* 🌟 全局深色模式工作区高定 */
+[data-theme="dark"] .workspace-view { background: #0f1218; }
+[data-theme="dark"] .ymind-top-bar { background: rgba(22, 27, 38, 0.88); border-bottom-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .ymind-action-dock { background: rgba(28, 35, 48, 0.94); border-color: rgba(255, 255, 255, 0.14); }
+[data-theme="dark"] .ymind-segmented-control { background: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .seg-btn.active-mode { background: #263044; color: #fff; }
+[data-theme="dark"] .dock-btn { color: #f8fafc; }
+[data-theme="dark"] .dock-kbd { background: rgba(255, 255, 255, 0.1); color: #94a3b8; }
+[data-theme="dark"] .dock-capsule-btn { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.14); color: #cbd5e1; }
+[data-theme="dark"] .dock-capsule-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+[data-theme="dark"] .apple-tab-bar { background: #161b26; border-bottom-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .apple-tab-item { color: #94a3b8; }
+[data-theme="dark"] .apple-tab-item.active { background: #1f2737; color: #f8fafc; border-color: rgba(255, 255, 255, 0.12); }
+[data-theme="dark"] .outliner-panel { background: #151a24; }
+[data-theme="dark"] .outliner-text-input:focus { background: #1c2332; }
+[data-theme="dark"] .canvas-floating-controls,
+[data-theme="dark"] .minimap-widget { background: rgba(28, 35, 48, 0.92); border-color: rgba(255, 255, 255, 0.14); color: #fff; }
+[data-theme="dark"] .apple-breadcrumb-capsule { background: rgba(28, 35, 48, 0.94); border-color: rgba(255, 255, 255, 0.14); }
+[data-theme="dark"] .apple-search-bar { background: rgba(28, 35, 48, 0.95); border-color: rgba(255, 255, 255, 0.15); }
+[data-theme="dark"] .inline-editor { background: #1e2637 !important; color: #f8fafc !important; }

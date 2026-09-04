@@ -1,5 +1,6 @@
+import { COLOR_PALETTES, CANVAS_THEMES, CANVAS_PATTERNS } from "../data/palettes.js";
 import { getGlobalSettings, saveGlobalSettings, getDefaultSettings } from "../core/state.js";
-import { showToast } from "./dialog.js";
+import { showToast, escapeHtml } from "./dialog.js";
 import { restartAutoSaveEngine } from "../storage/storage.js";
 
 let scannedFontsCache = null;
@@ -92,11 +93,13 @@ function findLabelByValue(optionsData, val) {
       if (item.value === val) return item.label;
     }
   }
-  return val || "请选择...";
-}
-
-function escapeHtml(str) {
-  return String(str || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
+  if (val) {
+    const clean = val.replace(/"/g, "").split(",")[0].trim();
+    if (clean.startsWith("-apple-system")) return "系统默认西文";
+    if (clean.includes("PingFang")) return "系统默认中文";
+    return clean;
+  }
+  return "请选择...";
 }
 
 window.addEventListener("click", (e) => {
@@ -178,96 +181,37 @@ function checkFontAvailable(fontName) {
 export async function syncSettingsForm() {
   const s = getGlobalSettings();
 
-  const layoutOpts = [{
-    items: [
-      { value: "mindmap", label: "🌳 经典双向导图 (Mindmap)" },
-      { value: "logic-right", label: "➡️ 向右逻辑推导图 (Logic Right)" },
-      { value: "logic-left", label: "⬅️ 向左逆向归因图 (Logic Left)" },
-      { value: "org-down", label: "🏢 经典组织架构图 (Org Down)" }
-    ]
-  }];
+  const configs = [
+    ["wrap-setting-app-theme", [
+      { value: "light", label: "☀️ 浅色明亮模式 (Light Mode)" },
+      { value: "dark", label: "🌙 深色黑曜模式 (Dark Mode)" },
+      { value: "auto", label: "💻 跟随操作系统设置 (System Auto)" }
+    ], s.appTheme || "light"],
+    ["wrap-setting-default-layout", [
+      { value: "mindmap", label: "🌳 经典双向导图" }, { value: "logic-right", label: "➡️ 向右逻辑推导图" },
+      { value: "logic-left", label: "⬅️ 向左逆向归因图" }, { value: "org-down", label: "🏢 经典组织架构图" }
+    ], s.layout],
+    ["wrap-setting-default-palette", Object.values(COLOR_PALETTES).map(p => ({ value: p.id, label: p.name })), s.palette],
+    ["wrap-setting-default-line", [
+      { value: "curve", label: "平滑曲线" }, { value: "rounded-ortho", label: "圆角折线" },
+      { value: "sharp-ortho", label: "直角折线" }, { value: "straight", label: "极简直线" }, { value: "arc-corner", label: "现代圆弧" }
+    ], s.lineStyle],
+    ["wrap-setting-default-box", [
+      { value: "squircle", label: "超椭圆卡片" }, { value: "rect", label: "几何方框" },
+      { value: "underline", label: "极简下划线" }, { value: "solid", label: "实色填充卡片" }
+    ], s.boxStyle],
+    ["wrap-setting-default-bg-color", CANVAS_THEMES.map(t => ({ value: t.id, label: t.label })), s.canvasBgColor || "studio-white"],
+    ["wrap-setting-default-bg-pattern", CANVAS_PATTERNS.map(p => ({ value: p.id, label: p.label })), s.canvasBgPattern || "dots"],
+    ["wrap-setting-auto-save", [
+      { value: "0", label: "🚫 关闭自动保存" }, { value: "15", label: "⏱️ 每 15 秒" }, { value: "30", label: "⏱️ 每 30 秒 (推荐)" },
+      { value: "60", label: "⏱️ 每 1 分钟" }, { value: "300", label: "⏱️ 每 5 分钟" }, { value: "600", label: "⏱️ 每 10 分钟" }
+    ], s.autoSaveInterval || "30"],
+    ["wrap-setting-focus-follow", [
+      { value: "smooth", label: "🚀 开启平滑移动 (推荐)" }, { value: "instant", label: "⚡ 瞬时直达定位" }, { value: "off", label: "🚫 关闭移动定位" }
+    ], s.focusFollowMode || "smooth"]
+  ];
 
-  const paletteOpts = [{
-    items: [
-      { value: "apple-classic", label: "🍏 Apple 经典彩虹阶梯" },
-      { value: "sketch-hand", label: "✏️ 温暖复古手绘" },
-      { value: "deep-ocean", label: "🌊 深海蓝浪" },
-      { value: "nordic-forest", label: "🌲 极地冷杉" },
-      { value: "sunset-glow", label: "🌅 落日晚霞" },
-      { value: "cyberpunk", label: "⚡ 赛博霓虹" },
-      { value: "morandi-nature", label: "🌸 莫兰迪雅致" },
-      { value: "caramel-latte", label: "☕ 焦糖拿铁" },
-      { value: "mystic-nebula", label: "🔮 灵动星云" },
-      { value: "fresh-mint", label: "🌿 初夏薄荷" },
-      { value: "graphite-mono", label: "🌑 石墨极客" }
-    ]
-  }];
-
-  const lineOpts = [{
-    items: [
-      { value: "curve", label: "平滑曲线 (Smooth Curve)" },
-      { value: "rounded-ortho", label: "圆角折线 (Rounded Ortho)" },
-      { value: "sharp-ortho", label: "直角折线 (Sharp Ortho)" },
-      { value: "straight", label: "极简直线 (Straight Line)" },
-      { value: "arc-corner", label: "现代圆弧 (Arc Corner)" }
-    ]
-  }];
-
-  const boxOpts = [{
-    items: [
-      { value: "squircle", label: "超椭圆卡片 (Apple Squircle)" },
-      { value: "rect", label: "几何方框 (Rectangle)" },
-      { value: "underline", label: "极简下划线 (Underline)" },
-      { value: "solid", label: "实色填充卡片 (Solid Card)" }
-    ]
-  }];
-
-  const themeOpts = [{
-    items: [
-      { value: "studio-white", label: "🍏 雪域纯白" },
-      { value: "warm-ivory", label: "📜 暖心象牙" },
-      { value: "vintage-parchment", label: "📦 复古羊皮" },
-      { value: "matcha-mist", label: "🍵 京都抹茶" },
-      { value: "lavender-fog", label: "🪻 薰衣草雾" },
-      { value: "glacier-blue", label: "🧊 冰川天蓝" },
-      { value: "morandi-stone", label: "🪨 莫兰迪石" },
-      { value: "sakura-blossom", label: "🌸 樱花浅粉" },
-      { value: "sand-dune", label: "🏜️ 晨曦流沙" },
-      { value: "space-gray", label: " 深空灰钛" },
-      { value: "midnight-abyss", label: "🌑 极夜黑曜" },
-      { value: "prussian-navy", label: "🌊 普鲁士蓝" },
-      { value: "slate-chalkboard", label: "🎓 学院墨绿" },
-      { value: "cyber-violet", label: "🔮 暗夜紫晶" },
-      { value: "obsidian-coffee", label: "☕ 浓缩黑曜" }
-    ]
-  }];
-
-  const autoSaveOpts = [{
-    items: [
-      { value: "0", label: "🚫 关闭自动保存 (不自动保存)" },
-      { value: "15", label: "⏱️ 每 15 秒 (高频极速)" },
-      { value: "30", label: "⏱️ 每 30 秒 (推荐默认)" },
-      { value: "60", label: "⏱️ 每 1 分钟" },
-      { value: "300", label: "⏱️ 每 5 分钟" },
-      { value: "600", label: "⏱️ 每 10 分钟" }
-    ]
-  }];
-
-  createCustomSelect("wrap-setting-default-layout", layoutOpts, s.layout);
-  createCustomSelect("wrap-setting-default-palette", paletteOpts, s.palette);
-  createCustomSelect("wrap-setting-default-line", lineOpts, s.lineStyle);
-  createCustomSelect("wrap-setting-default-box", boxOpts, s.boxStyle);
-  createCustomSelect("wrap-setting-default-theme", themeOpts, s.canvasBgColor || "studio-white");
-  createCustomSelect("wrap-setting-auto-save", autoSaveOpts, s.autoSaveInterval || "30");
-
-  const focusFollowOpts = [{
-    items: [
-      { value: "smooth", label: "🚀 开启平滑移动 (推荐默认 · 流畅动画)" },
-      { value: "instant", label: "⚡ 瞬时直达定位 (无动画直接跳转)" },
-      { value: "off", label: "🚫 关闭移动定位 (保持画布视口不动)" }
-    ]
-  }];
-  createCustomSelect("wrap-setting-focus-follow", focusFollowOpts, s.focusFollowMode || "smooth");
+  configs.forEach(([id, items, val]) => createCustomSelect(id, [{ items }], val));
 
   if (!scannedFontsCache) {
     const fonts = await scanSystemFonts();
@@ -278,46 +222,15 @@ export async function syncSettingsForm() {
 }
 
 function applyFontOptions(fonts, curEn, curZh) {
-  const enGroups = [
-    {
-      title: "🌟 推荐西文字体",
-      items: [
-        { value: "-apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"SF Pro Text\", sans-serif", label: " Apple SF Pro (苹果经典原生)" },
-        { value: "\"Inter\", -apple-system, sans-serif", label: "Inter (高清晰度现代几何无衬线)" },
-        { value: "\"Helvetica Neue\", Helvetica, Arial, sans-serif", label: "Helvetica Neue (包豪斯排版经典)" },
-        { value: "\"Roboto\", sans-serif", label: "Roboto (Google Material 精致字体)" },
-        { value: "\"JetBrains Mono\", \"SF Mono\", monospace", label: "JetBrains Mono (极客等宽编程字体)" },
-        { value: "\"Chalkboard SE\", \"Comic Sans MS\", cursive", label: "Chalkboard (灵动自然手写手绘)" }
-      ]
-    }
-  ];
+  const enGroups = [{
+    title: `💻 本地已安装西文字体 (${fonts.english.length})`,
+    items: fonts.english.map(f => ({ value: `"${f}", sans-serif`, label: f }))
+  }];
 
-  if (fonts.english.length > 0) {
-    enGroups.push({
-      title: `💻 本地已安装西文字体 (${fonts.english.length})`,
-      items: fonts.english.map(f => ({ value: `"${f}", sans-serif`, label: f }))
-    });
-  }
-
-  const zhGroups = [
-    {
-      title: "🌟 推荐中文字体",
-      items: [
-        { value: "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif", label: " 苹方 / 冬青黑体 (PingFang SC)" },
-        { value: "\"Microsoft YaHei\", \"微软雅黑\", sans-serif", label: "微软雅黑 (Microsoft YaHei)" },
-        { value: "\"STKaiti\", \"KaiTi\", \"楷体\", serif", label: "华文楷体 / 楷体 (STKaiti)" },
-        { value: "\"Songti SC\", \"SimSun\", \"宋体\", serif", label: "宋体 / 仿宋 (Songti SC)" },
-        { value: "system-ui, sans-serif", label: "跟随操作系统环境默认" }
-      ]
-    }
-  ];
-
-  if (fonts.chinese.length > 0) {
-    zhGroups.push({
-      title: `💻 本地已安装中文字体 (${fonts.chinese.length})`,
-      items: fonts.chinese.map(f => ({ value: `"${f}", sans-serif`, label: f }))
-    });
-  }
+  const zhGroups = [{
+    title: `💻 本地已安装中文字体 (${fonts.chinese.length})`,
+    items: fonts.chinese.map(f => ({ value: `"${f}", sans-serif`, label: f }))
+  }];
 
   createCustomSelect("wrap-setting-font-en", enGroups, curEn, updateTypographyPreview);
   createCustomSelect("wrap-setting-font-zh", zhGroups, curZh, updateTypographyPreview);
@@ -360,18 +273,21 @@ export function initSettingsViewEvents(renderApp) {
 
   btnSave?.addEventListener("click", () => {
     const newSettings = {
+      appTheme: customSelectRegistry.get("wrap-setting-app-theme")?.getValue() || "light",
       fontEn: customSelectRegistry.get("wrap-setting-font-en")?.getValue() || "-apple-system, BlinkMacSystemFont, \"SF Pro Text\"",
       fontZh: customSelectRegistry.get("wrap-setting-font-zh")?.getValue() || "\"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif",
       layout: customSelectRegistry.get("wrap-setting-default-layout")?.getValue() || "mindmap",
       palette: customSelectRegistry.get("wrap-setting-default-palette")?.getValue() || "apple-classic",
       lineStyle: customSelectRegistry.get("wrap-setting-default-line")?.getValue() || "curve",
       boxStyle: customSelectRegistry.get("wrap-setting-default-box")?.getValue() || "squircle",
-      canvasBgColor: customSelectRegistry.get("wrap-setting-default-theme")?.getValue() || "studio-white",
+      canvasBgColor: customSelectRegistry.get("wrap-setting-default-bg-color")?.getValue() || "studio-white",
+      canvasBgPattern: customSelectRegistry.get("wrap-setting-default-bg-pattern")?.getValue() || "dots",
       autoSaveInterval: customSelectRegistry.get("wrap-setting-auto-save")?.getValue() || "30",
       focusFollowMode: customSelectRegistry.get("wrap-setting-focus-follow")?.getValue() || "smooth"
     };
 
     saveGlobalSettings(newSettings);
+    import("../core/config.js").then(c => c.applyAppTheme(newSettings.appTheme));
     restartAutoSaveEngine(renderApp);
     renderApp();
     showToast("⚙️ 偏好设置与默认样式已保存并即时生效");
@@ -385,7 +301,8 @@ export function initSettingsViewEvents(renderApp) {
     customSelectRegistry.get("wrap-setting-default-palette")?.setValue(def.palette);
     customSelectRegistry.get("wrap-setting-default-line")?.setValue(def.lineStyle);
     customSelectRegistry.get("wrap-setting-default-box")?.setValue(def.boxStyle);
-    customSelectRegistry.get("wrap-setting-default-theme")?.setValue(def.canvasBgColor || "studio-white");
+    customSelectRegistry.get("wrap-setting-default-bg-color")?.setValue(def.canvasBgColor || "studio-white");
+    customSelectRegistry.get("wrap-setting-default-bg-pattern")?.setValue(def.canvasBgPattern || "dots");
     customSelectRegistry.get("wrap-setting-auto-save")?.setValue(def.autoSaveInterval || "30");
     customSelectRegistry.get("wrap-setting-focus-follow")?.setValue(def.focusFollowMode || "smooth");
     updateTypographyPreview();

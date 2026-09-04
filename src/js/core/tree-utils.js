@@ -42,7 +42,6 @@ export function getAncestors(targetId, node, path = []) {
   return null;
 }
 
-// 🌟 深度断言：判断节点是否真实可见（任何祖先节点折叠均判定不可见）
 export function isNodeVisibleInTree(nodeId, root) {
   if (!nodeId || !root) return false;
   if (root.id === nodeId) return true;
@@ -67,6 +66,8 @@ export function sanitizeTreeForHistory(node) {
     collapsed: Boolean(node.collapsed),
     fontSize: node.fontSize || null,
     fontWeight: node.fontWeight || null,
+    fontStyle: node.fontStyle || null,
+    textDecoration: node.textDecoration || null,
     textColor: node.textColor || null,
     children: node.children ? node.children.map(sanitizeTreeForHistory).filter(Boolean) : []
   };

@@ -121,9 +121,7 @@ export async function decryptMindPayload(encryptedPackage, password) {
   const format = encryptedPackage.format || "";
   const kdf = encryptedPackage.kdf || "";
 
-  if (format === "YMIND_PRO_VAULT_V2" || format === "XMIND_SECURE_V1") {
-    return await decryptLegacyPayload(encryptedPackage, password);
-  }
+  const isLegacy = format === "YMIND_PRO_VAULT_V2" || format === "XMIND_SECURE_V1";
 
   try {
     const aad = enc.encode(format);
@@ -136,10 +134,10 @@ export async function decryptMindPayload(encryptedPackage, password) {
     let kekBytes = null;
 
     // 🌟 核心修正：严格依据包内记录的真实 KDF 解算密钥
-    if (kdf === "PBKDF2-SHA512" || format === "YMIND_PRO_VAULT_V3_PBKDF2") {
+    if (isLegacy || kdf === "PBKDF2-SHA512" || format === "YMIND_PRO_VAULT_V3_PBKDF2") {
       const baseKey = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
       const derivedBits = await crypto.subtle.deriveBits(
-        { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-512" },
+        { name: "PBKDF2", salt: salt, iterations: encryptedPackage.iterations || (isLegacy ? 600000 : 100000), hash: "SHA-512" },
         baseKey,
         256
       );
@@ -175,33 +173,7 @@ export async function decryptMindPayload(encryptedPackage, password) {
   }
 }
 
-async function decryptLegacyPayload(pkg, password) {
-  const enc = new TextEncoder();
-  try {
-    const aad = enc.encode("YMIND_PRO_VAULT_V2");
-    const salt = base64ToArrayBuffer(pkg.salt);
-    const dekIv = base64ToArrayBuffer(pkg.dekIv);
-    const wrappedDek = base64ToArrayBuffer(pkg.wrappedDek);
-    const payloadIv = base64ToArrayBuffer(pkg.payloadIv);
-    const payloadCipher = base64ToArrayBuffer(pkg.payloadCipher);
 
-    const baseKey = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
-    const kekKey = await crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt: salt, iterations: pkg.iterations || 600000, hash: "SHA-512" },
-      baseKey,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["decrypt"]
-    );
-
-    const unwrappedDekRaw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: dekIv, additionalData: aad }, kekKey, wrappedDek);
-    const dekKey = await crypto.subtle.importKey("raw", unwrappedDekRaw, { name: "AES-GCM" }, false, ["decrypt"]);
-    const decryptedBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv: payloadIv, additionalData: aad }, dekKey, payloadCipher);
-    return JSON.parse(new TextDecoder().decode(decryptedBuffer));
-  } catch {
-    throw new Error("INVALID_PASSWORD");
-  }
-}
 
 export function isEncryptedPackage(data) {
   return data && (

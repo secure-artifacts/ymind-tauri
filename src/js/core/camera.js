@@ -1,8 +1,7 @@
 import { state, getActiveTab, findNode, getPrimarySelectedNode } from "./state.js";
 import { getGlobalSettings } from "./config.js";
-import { syncMinimapViewportBox } from "../render/minimap.js";
-import { syncInlineEditorPosition } from "../render/render.js";
 import { bus, EVENTS } from "./event-bus.js";
+import { computeLayout, assignCoordinates } from "../geometry/layout.js";
 
 export const camera = {
   transform: { x: window.innerWidth / 2 - 60, y: window.innerHeight / 2 - 30, scale: 1 },
@@ -21,10 +20,7 @@ export function requestTransformUpdate() {
   camera.isTransformPending = true;
   requestAnimationFrame(() => {
     bus.emit(EVENTS.RENDER_CANVAS_ONLY);
-    syncMinimapViewportBox();
-    syncInlineEditorPosition();
-    const zt = document.getElementById("txt-zoom-level");
-    if (zt) zt.innerText = `${Math.round(camera.transform.scale * 100)}%`;
+    bus.emit(EVENTS.TRANSFORM_CHANGE, camera.transform);
     camera.isTransformPending = false;
   });
 }
@@ -78,7 +74,7 @@ export function stopAllCameraAnimations() {
   state.isInteracting = false;
 }
 
-export function springAnimateTo(targetX, targetY, targetScale = camera.transform.scale, tension = 180, friction = 24) {
+export function springAnimateTo(targetX, targetY, targetScale = camera.transform.scale, tension = 170, friction = 22) {
   stopAllCameraAnimations();
   state.isInteracting = true;
 
@@ -125,15 +121,30 @@ export function springAnimateTo(targetX, targetY, targetScale = camera.transform
   camera.cameraAnimationId = requestAnimationFrame(springStep);
 }
 
+// 🌟 强健的自适应全景居中：确保未就绪时自动核算，无论聚焦何处均能完美自适应视口
 export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
-  const root = state.mindData;
-  if (!root) return;
+  const currentRoot = findNode(state.focusedRootId, state.mindData) || state.mindData;
+  if (!currentRoot) return;
 
   const vp = document.getElementById("viewport");
   if (!vp) return;
 
   const usableW = vp.clientWidth || window.innerWidth;
   const usableH = vp.clientHeight || window.innerHeight;
+
+  // 若节点未曾计算过坐标，先跑一次几何解算
+  if (currentRoot.x === undefined || currentRoot.y === undefined) {
+    computeLayout(currentRoot, 0, state.focusedRootId, state.layoutStructure, state.nodeSpacing || "normal");
+    assignCoordinates(currentRoot, 0, 0, state.focusedRootId, state.layoutStructure, null, null, state.colorPalette || "apple-classic", state.nodeSpacing || "normal", getActiveTab()?.spatialIndex);
+    state.isLayoutDirty = false;
+  }
+
+  let targetNode = currentRoot;
+  if (typeof nodeOrId === "string") {
+    targetNode = findNode(nodeOrId, currentRoot) || currentRoot;
+  } else if (nodeOrId && typeof nodeOrId === "object" && nodeOrId.id) {
+    targetNode = nodeOrId;
+  }
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   function scan(n) {
@@ -145,16 +156,24 @@ export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
     }
     if (n.children && !n.collapsed) n.children.forEach(scan);
   }
-  scan(root);
+  scan(targetNode);
 
-  if (minX === Infinity) return;
+  if (minX === Infinity) {
+    stopAllCameraAnimations();
+    camera.transform.x = usableW / 2 - 60;
+    camera.transform.y = usableH / 2 - 30;
+    camera.transform.scale = 1.0;
+    syncTabCamera();
+    requestTransformUpdate();
+    return;
+  }
 
-  const padX = 100, padY = 80;
+  const padX = 120, padY = 90;
   const totalW = (maxX - minX) + padX * 2;
   const totalH = (maxY - minY) + padY * 2;
 
   const fitScale = Math.min(usableW / totalW, usableH / totalH);
-  const targetScale = Math.max(0.3, Math.min(1.0, fitScale));
+  const targetScale = Math.max(0.15, Math.min(1.2, fitScale));
 
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
@@ -163,7 +182,7 @@ export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
   const targetY = usableH / 2 - centerY * targetScale;
 
   if (animated) {
-    springAnimateTo(targetX, targetY, targetScale, 160, 22);
+    springAnimateTo(targetX, targetY, targetScale, 170, 22);
   } else {
     stopAllCameraAnimations();
     camera.transform.x = targetX;
@@ -172,6 +191,33 @@ export function smartAdaptiveCenter(nodeOrId = null, animated = true) {
     syncTabCamera();
     requestTransformUpdate();
   }
+}
+
+// 统一的视口中心定比缩放
+export function zoomViewportByFactor(factor) {
+  const vp = document.getElementById("viewport");
+  const cx = (vp?.clientWidth || window.innerWidth) / 2;
+  const cy = (vp?.clientHeight || window.innerHeight) / 2;
+  const oldScale = camera.transform.scale;
+  const newScale = Math.min(3.0, Math.max(0.15, oldScale * factor));
+  camera.transform.x = cx - (cx - camera.transform.x) * (newScale / oldScale);
+  camera.transform.y = cy - (cy - camera.transform.y) * (newScale / oldScale);
+  camera.transform.scale = newScale;
+  syncTabCamera();
+  requestTransformUpdate();
+}
+
+// 统一的 100% 居中复位
+export function resetZoom100() {
+  const vp = document.getElementById("viewport");
+  const cx = (vp?.clientWidth || window.innerWidth) / 2;
+  const cy = (vp?.clientHeight || window.innerHeight) / 2;
+  const oldScale = camera.transform.scale;
+  camera.transform.x = cx - (cx - camera.transform.x) * (1.0 / oldScale);
+  camera.transform.y = cy - (cy - camera.transform.y) * (1.0 / oldScale);
+  camera.transform.scale = 1.0;
+  syncTabCamera();
+  requestTransformUpdate();
 }
 
 export function locateFocusedNode(nodeOrId = null, animated = true) {

@@ -1,19 +1,132 @@
+import { saveSessionImmediate } from "../storage/session.js";
 import { state, getActiveTab, createNewTab, getPrimarySelectedNode, findNode } from "../core/state.js";
 import { saveSnapshot } from "../core/history.js";
 import { isNodeVisibleInTree } from "../core/tree-utils.js";
-import { camera, requestTransformUpdate, startInertiaMomentum, stopAllCameraAnimations, locateFocusedNode } from "../core/camera.js";
+import { camera, requestTransformUpdate, startInertiaMomentum, stopAllCameraAnimations, locateFocusedNode, smartAdaptiveCenter, zoomViewportByFactor, resetZoom100 } from "../core/camera.js";
 import { syncInspectorUi, applyCanvasThemeToBody } from "./inspector.js";
-import { openNotesDrawer } from "./notes.js";
+import { openNotesDrawer, syncNotesDrawerWithActiveNode, closeNotesDrawer } from "./notes.js";
 import { showToast } from "./dialog.js";
 import { serializeTabToPackage, deserializePackage, parseTextToTree, extractRealXMindZip } from "../core/serializer.js";
 import { recordRecentDoc } from "./home.js";
 import { showLockScreen, updateSecurityDockStatus } from "./vault.js";
-import { startEditNode } from "../render/render.js";
+import { startEditNode, setDropIndicator } from "../render/render.js";
 import { addChildNode, addSiblingNode, deleteSelectedNodes, markDirtyAndRefresh } from "../interaction/node-actions.js";
 import { bindGlobalShortcuts } from "../interaction/shortcuts.js";
 import { bus, EVENTS } from "../core/event-bus.js";
+import { findParent, getAncestors } from "../core/state.js";
 
 let peekTargetNode = null;
+let gDragNode = null;
+let gIsDragging = false;
+let gDragStart = { x: 0, y: 0 };
+let gDropTarget = null;
+
+// 🌟 强大的全树拓扑拾取算法：智能判定“跨分支挂载改父级”与“同级兄弟插入排序”
+function calculateFullTreeDrop(worldX, worldY, dragNode) {
+  if (!dragNode || dragNode.id === state.focusedRootId) return null;
+  const curTab = getActiveTab();
+  if (!curTab?.spatialIndex) return null;
+
+  // 1. 优先判定：是否悬停在某个目标节点本体上方 -> 触发【跨分支挂载为子节点 (Reparent)】
+  const hoverNode = curTab.spatialIndex.pickNode(worldX, worldY, 10);
+  const currentParent = findParent(dragNode.id, state.mindData);
+
+  // 正确防环校验：目标节点不能是自身、不能是自身后代(防死循环)、且不能是当前直接父节点(已经是其子节点)
+  const isDescendant = hoverNode ? Boolean(findNode(hoverNode.id, dragNode)) : false;
+  const isCurrentParent = currentParent && hoverNode && currentParent.id === hoverNode.id;
+
+  if (hoverNode && hoverNode.id !== dragNode.id && !isDescendant && !isCurrentParent) {
+    return {
+      type: "reparent",
+      targetParent: hoverNode,
+      indicator: {
+        type: "reparent",
+        x: hoverNode.x,
+        y: hoverNode.y,
+        width: hoverNode.width,
+        height: hoverNode.height
+      }
+    };
+  }
+
+  // 2. 次级判定：是否处于当前父级下的同级兄弟槽位 -> 触发【同级插入排序】
+  const parent = findParent(dragNode.id, state.mindData);
+  if (!parent || !parent.children || parent.children.length <= 1) return null;
+
+  const siblings = parent.children;
+  const structure = state.layoutStructure || "mindmap";
+
+  if (structure === "org-down") {
+    let closest = -1, minD = Infinity;
+    for (let i = 0; i <= siblings.length; i++) {
+      let slotX;
+      if (i === 0) slotX = siblings[0].x - 12;
+      else if (i === siblings.length) slotX = siblings[siblings.length - 1].x + siblings[siblings.length - 1].width + 12;
+      else slotX = (siblings[i - 1].x + siblings[i - 1].width + siblings[i].x) / 2;
+
+      let d = Math.abs(worldX - slotX);
+      if (d < minD && d < 70 && Math.abs(worldY - siblings[0].y) < 140) {
+        minD = d;
+        closest = i;
+      }
+    }
+    if (closest !== -1) {
+      let lineX;
+      if (closest === 0) lineX = siblings[0].x - 8;
+      else if (closest === siblings.length) lineX = siblings[siblings.length - 1].x + siblings[siblings.length - 1].width + 8;
+      else lineX = (siblings[closest - 1].x + siblings[closest - 1].width + siblings[closest].x) / 2;
+
+      return {
+        type: "reorder",
+        parent,
+        insertIndex: closest,
+        indicator: { x1: lineX, y1: siblings[0].y - 8, x2: lineX, y2: siblings[0].y + siblings[0].height + 8 }
+      };
+    }
+  } else {
+    const sameSide = siblings.filter(s => {
+      if (structure === "mindmap" && parent.id === state.focusedRootId) {
+        return s.branchDirection === dragNode.branchDirection;
+      }
+      return true;
+    });
+    if (sameSide.length > 1) {
+      let closest = -1, minD = Infinity;
+      for (let i = 0; i <= sameSide.length; i++) {
+        let slotY;
+        if (i === 0) slotY = sameSide[0].y - 10;
+        else if (i === sameSide.length) slotY = sameSide[sameSide.length - 1].y + sameSide[sameSide.length - 1].height + 10;
+        else slotY = (sameSide[i - 1].y + sameSide[i - 1].height + sameSide[i].y) / 2;
+
+        let d = Math.abs(worldY - slotY);
+        if (d < minD && d < 65 && Math.abs(worldX - sameSide[0].x) < 180) {
+          minD = d;
+          closest = i;
+        }
+      }
+
+      if (closest !== -1) {
+        let lineY;
+        if (closest === 0) lineY = sameSide[0].y - 8;
+        else if (closest === sameSide.length) lineY = sameSide[sameSide.length - 1].y + sameSide[sameSide.length - 1].height + 8;
+        else lineY = (sameSide[closest - 1].y + sameSide[closest - 1].height + sameSide[closest].y) / 2;
+
+        let minX = sameSide[0].x - 6;
+        let maxX = sameSide[0].x + Math.max(...sameSide.map(s => s.width)) + 6;
+        let insIdx = (closest === sameSide.length) ? (siblings.indexOf(sameSide[sameSide.length - 1]) + 1) : siblings.indexOf(sameSide[closest]);
+
+        return {
+          type: "reorder",
+          parent,
+          insertIndex: insIdx,
+          indicator: { x1: minX, y1: lineY, x2: maxX, y2: lineY }
+        };
+      }
+    }
+  }
+
+  return null;
+}
 
 async function callTauri(cmd, args = {}) {
   if (window.__TAURI__?.core?.invoke) return await window.__TAURI__.core.invoke(cmd, args);
@@ -22,47 +135,8 @@ async function callTauri(cmd, args = {}) {
   throw new Error("TAURI_IPC_UNAVAILABLE");
 }
 
-function fallbackPickNode(worldX, worldY, pad = 8) {
-  const root = findNode(state.focusedRootId, state.mindData) || state.mindData;
-  if (!root) return null;
-  let hit = null;
-  function walk(n) {
-    if (n.x !== undefined && n.y !== undefined) {
-      if (worldX >= n.x - pad && worldX <= n.x + n.width + pad &&
-          worldY >= n.y - pad && worldY <= n.y + n.height + pad) {
-        hit = n;
-      }
-    }
-    if (n.children && !n.collapsed) {
-      for (let i = 0; i < n.children.length; i++) walk(n.children[i]);
-    }
-  }
-  walk(root);
-  return hit;
-}
 
-function fallbackPickBadge(worldX, worldY) {
-  const root = findNode(state.focusedRootId, state.mindData) || state.mindData;
-  if (!root) return null;
-  let hit = null;
-  function walk(n) {
-    if (n.children && n.children.length > 0 && n.id !== state.focusedRootId) {
-      const bx = (n.branchDirection === "left") ? n.x : (n.x + n.width);
-      const by = n.y + n.height / 2;
-      if (Math.hypot(worldX - bx, worldY - by) <= 12) { hit = n; return; }
-    }
-    if (n.children && !n.collapsed) {
-      for (let i = 0; i < n.children.length; i++) {
-        walk(n.children[i]);
-        if (hit) return;
-      }
-    }
-  }
-  walk(root);
-  return hit;
-}
 
-// 🌟 精准 AABB 框选：仅遍历当前可见展开节点，天然隔绝折叠子节点
 function computeDirectMarquee(minX, maxX, minY, maxY) {
   const { x, y, scale: s } = camera.transform;
   const worldL = (minX - x) / s, worldR = (maxX - x) / s;
@@ -88,9 +162,11 @@ function computeDirectMarquee(minX, maxX, minY, maxY) {
 
 export function updateSelectionOnly() {
   bus.emit(EVENTS.RENDER_APP);
+  syncNotesDrawerWithActiveNode();
 }
 
 export async function handleLoadedFileContent(contentData, filePath, renderApp) {
+  closeNotesDrawer();
   let parsed = null;
   if (contentData instanceof ArrayBuffer) {
     try {
@@ -125,6 +201,7 @@ export async function handleLoadedFileContent(contentData, filePath, renderApp) 
   tab.canvasBgPattern = res.loadedBgPattern;
   tab.isDirty = false;
   state.isLayoutDirty = true;
+  tab.versions = res.isEncrypted ? [] : (res.loadedVersions || []);
 
   if (res.isEncrypted) {
     tab.isEncrypted = true;
@@ -145,6 +222,16 @@ export async function handleLoadedFileContent(contentData, filePath, renderApp) 
   applyCanvasThemeToBody(tab.canvasBgColor, tab.canvasBgPattern);
   syncInspectorUi();
   updateSecurityDockStatus();
+
+  // 🌟 核心修复：文件一旦成功加载，立即记录进最近文档列表！
+  recordRecentDoc(tab.title, tab.mindData, tab.layoutStructure, tab.filePath, {
+    colorPalette: tab.colorPalette,
+    lineStyle: tab.lineStyle,
+    boxStyle: tab.boxStyle,
+    canvasBgColor: tab.canvasBgColor,
+    canvasBgPattern: tab.canvasBgPattern
+  }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault, tab.camera);
+
   bus.emit(EVENTS.SHOW_WORKSPACE);
 }
 
@@ -177,6 +264,7 @@ export async function performSave(customTab = null) {
     }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault, tab.camera);
 
     bus.emit(EVENTS.RENDER_APP);
+    saveSessionImmediate();
     showToast(tab.isEncrypted ? "🛡️ 「" + tab.title + "」已加密保存" : "💾 「" + tab.title + "」已保存");
   } catch {
     const blob = new Blob([contentStr], { type: "application/json;charset=utf-8" });
@@ -198,9 +286,12 @@ export async function performSave(customTab = null) {
     }, tab.isEncrypted, tab.password, tab.passwordHint, tab.encryptedVault, tab.camera);
 
     bus.emit(EVENTS.RENDER_APP);
+    saveSessionImmediate();
     showToast("💾 文件已下载保存为: " + pkg.filenameWithExt);
   }
 }
+
+
 
 function initNodeAttributeEvents(renderApp) {
   const btnAttr = document.getElementById("btn-node-attributes");
@@ -224,6 +315,7 @@ function initNodeAttributeEvents(renderApp) {
       if (!target) return;
       target.icon = (target.icon === icon) ? null : icon;
       markDirtyAndRefresh(renderApp);
+      syncNotesDrawerWithActiveNode();
     });
   });
 
@@ -267,13 +359,12 @@ function initNodeAttributeEvents(renderApp) {
   });
 
   const tagModal = document.getElementById("apple-modal-overlay");
-  const tagList = document.getElementById("modal-tags-list");
-  const tagInput = document.getElementById("modal-input");
-  const btnTagCancel = document.getElementById("modal-btn-cancel");
-  const btnTagConfirm = document.getElementById("modal-btn-confirm");
 
   function renderTagModalList(node) {
+    if (!tagModal) return;
+    const tagList = tagModal.querySelector("#modal-tags-list");
     if (!tagList) return;
+
     const tags = Array.isArray(node.tags) ? node.tags : [];
     tagList.innerHTML = tags.map(t => `
       <span class="apple-modal-tag">
@@ -293,6 +384,8 @@ function initNodeAttributeEvents(renderApp) {
   }
 
   function addCurrentInputTag(node) {
+    if (!tagModal) return;
+    const tagInput = tagModal.querySelector("#modal-input");
     if (!tagInput) return;
     const val = tagInput.value.trim();
     if (!val) return;
@@ -310,26 +403,24 @@ function initNodeAttributeEvents(renderApp) {
     e.stopPropagation();
     wrapper?.classList.remove("active");
     const node = getPrimarySelectedNode();
-    if (!node) return;
-    renderTagModalList(node);
-    if (tagInput) tagInput.value = "";
-    tagModal?.classList.remove("hidden");
-    tagInput?.focus();
-  });
+    if (!node || !tagModal) return;
 
-  btnTagCancel?.addEventListener("click", () => tagModal?.classList.add("hidden"));
-  btnTagConfirm?.addEventListener("click", () => {
-    const node = getPrimarySelectedNode();
-    if (node) addCurrentInputTag(node);
-  });
-  tagInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const node = getPrimarySelectedNode();
-      if (node) addCurrentInputTag(node);
-    } else if (e.key === "Escape") {
-      tagModal?.classList.add("hidden");
-    }
+    renderTagModalList(node);
+    const tagInput = tagModal.querySelector("#modal-input");
+    if (tagInput) tagInput.value = "";
+    tagModal.classList.remove("hidden");
+    tagInput?.focus();
+
+    tagModal.querySelector("#modal-btn-cancel").onclick = () => tagModal.classList.add("hidden");
+    tagModal.querySelector("#modal-btn-confirm").onclick = () => addCurrentInputTag(node);
+    tagInput.onkeydown = (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        addCurrentInputTag(node);
+      } else if (ev.key === "Escape") {
+        tagModal.classList.add("hidden");
+      }
+    };
   });
 }
 
@@ -356,7 +447,7 @@ export function initEventListeners(renderApp) {
     const isVisible = (id) => isNodeVisibleInTree(id, curRoot);
 
     let badgeNode = curTab?.spatialIndex?.pickCollapseBadge(worldX, worldY, state.focusedRootId, isVisible);
-    if (!badgeNode) badgeNode = fallbackPickBadge(worldX, worldY);
+    
     if (badgeNode) {
       e.stopPropagation();
       badgeNode.collapsed = !badgeNode.collapsed;
@@ -368,7 +459,7 @@ export function initEventListeners(renderApp) {
     }
 
     let node = curTab?.spatialIndex?.pickNode(worldX, worldY, 8, isVisible);
-    if (!node) node = fallbackPickNode(worldX, worldY, 8);
+    
 
     if (node) {
       e.stopPropagation();
@@ -387,7 +478,12 @@ export function initEventListeners(renderApp) {
       lastClickTime = now;
       lastClickNodeId = node.id;
 
-      // 🌟 Shift+点击：支持多选追加/反选
+      if (node.id !== state.focusedRootId && !e.shiftKey) {
+        gDragNode = node;
+        gDragStart = { x: e.clientX, y: e.clientY };
+        gIsDragging = false;
+      }
+
       if (e.shiftKey) {
         const nextSet = new Set(state.selectedIds);
         if (nextSet.has(node.id)) nextSet.delete(node.id);
@@ -400,10 +496,10 @@ export function initEventListeners(renderApp) {
       bus.emit(EVENTS.RENDER_APP);
       syncInspectorUi();
       locateFocusedNode(node.id, true);
+      syncNotesDrawerWithActiveNode();
       return;
     }
 
-    // 🌟 按住 Shift 且点击空白区域：进入框选模式
     if (e.shiftKey) {
       isMarquee = true;
       marqueeStart = { x: clickScreenX, y: clickScreenY };
@@ -430,18 +526,34 @@ export function initEventListeners(renderApp) {
   window.addEventListener("mousemove", (e) => {
     if (!vp) return;
     const rect = vp.getBoundingClientRect();
+    const s = camera.transform.scale;
+    const wx = (e.clientX - rect.left - camera.transform.x) / s;
+    const wy = (e.clientY - rect.top - camera.transform.y) / s;
+
+    // 🌟 实时计算拖拽挂载与重排
+    if (gDragNode) {
+      if (!gIsDragging && Math.hypot(e.clientX - gDragStart.x, e.clientY - gDragStart.y) > 4) {
+        gIsDragging = true;
+        isPanning = false;
+        vp.style.cursor = "grabbing";
+      }
+      if (gIsDragging) {
+        gDropTarget = calculateFullTreeDrop(wx, wy, gDragNode);
+        setDropIndicator(gDropTarget ? gDropTarget.indicator : null);
+        bus.emit(EVENTS.RENDER_CANVAS_ONLY);
+        return;
+      }
+    }
+
     const curTab = getActiveTab();
     const curRoot = findNode(state.focusedRootId, state.mindData) || state.mindData;
     const isVisible = (id) => isNodeVisibleInTree(id, curRoot);
 
     if (!isPanning && !isMarquee) {
-      const s = camera.transform.scale;
-      const wx = (e.clientX - rect.left - camera.transform.x) / s;
-      const wy = (e.clientY - rect.top - camera.transform.y) / s;
       let badgeHit = curTab?.spatialIndex?.pickCollapseBadge(wx, wy, state.focusedRootId, isVisible);
-      if (!badgeHit) badgeHit = fallbackPickBadge(wx, wy);
+      
       let nodeHit = badgeHit || curTab?.spatialIndex?.pickNode(wx, wy, 8, isVisible);
-      if (!nodeHit) nodeHit = fallbackPickNode(wx, wy, 8);
+      
 
       if (e.shiftKey) {
         vp.style.cursor = nodeHit ? "pointer" : "crosshair";
@@ -472,23 +584,56 @@ export function initEventListeners(renderApp) {
       marquee.style.width = Math.max(1, maxX - minX) + "px";
       marquee.style.height = Math.max(1, maxY - minY) + "px";
 
-      // 🌟 执行稳定直接的 AABB 几何相交计算
       const hitIds = computeDirectMarquee(minX, maxX, minY, maxY);
-
       const isSame = hitIds.size === state.selectedIds.size && [...hitIds].every(id => state.selectedIds.has(id));
       if (!isSame) {
         state.selectedIds = hitIds;
         bus.emit(EVENTS.RENDER_APP);
+        syncNotesDrawerWithActiveNode();
       }
     }
   });
 
   window.addEventListener("mouseup", () => {
+    // 🌟 提交跨分支改挂父级或同级排序结果
+    if (gIsDragging && gDropTarget && gDragNode) {
+      const oldParent = findParent(gDragNode.id, state.mindData);
+      if (oldParent) {
+        if (gDropTarget.type === "reparent") {
+          // 从旧父级中移除，挂入新父级子列表
+          oldParent.children = oldParent.children.filter(c => c.id !== gDragNode.id);
+          const newParent = gDropTarget.targetParent;
+          if (!newParent.children) newParent.children = [];
+          newParent.children.push(gDragNode);
+          newParent.collapsed = false;
+          markDirtyAndRefresh(renderApp);
+          showToast(`🔀 已成功移入「${newParent.text}」下`);
+        } else if (gDropTarget.type === "reorder") {
+          const { parent, insertIndex } = gDropTarget;
+          const oldIdx = parent.children.findIndex(c => c.id === gDragNode.id);
+          if (oldIdx !== -1) {
+            parent.children.splice(oldIdx, 1);
+            const finalIdx = (oldIdx < insertIndex) ? (insertIndex - 1) : insertIndex;
+            parent.children.splice(finalIdx, 0, gDragNode);
+            markDirtyAndRefresh(renderApp);
+            showToast("↕️ 节点顺序已更新");
+          }
+        }
+      }
+    }
+
+    gDragNode = null;
+    gIsDragging = false;
+    gDropTarget = null;
+    setDropIndicator(null);
+    bus.emit(EVENTS.RENDER_CANVAS_ONLY);
+
     if (state.isRecallMode && peekTargetNode) {
       peekTargetNode._unmasked = false;
       peekTargetNode = null;
       bus.emit(EVENTS.RENDER_APP);
     }
+
     if (isPanning) {
       const timeSinceLastMove = performance.now() - lastMoveTime;
       if (timeSinceLastMove < 45 && (Math.abs(panVel.x) > 0.12 || Math.abs(panVel.y) > 0.12)) {
@@ -510,6 +655,7 @@ export function initEventListeners(renderApp) {
         marquee.style.height = "0px";
       }
       syncInspectorUi();
+      syncNotesDrawerWithActiveNode();
     }
   });
 
@@ -555,11 +701,26 @@ export function initEventListeners(renderApp) {
     }, 120);
   }, { passive: false });
 
-  document.getElementById("btn-add-child")?.addEventListener("click", () => addChildNode(renderApp));
-  document.getElementById("btn-add-sibling")?.addEventListener("click", () => addSiblingNode(renderApp));
-  document.getElementById("btn-delete")?.addEventListener("click", () => deleteSelectedNodes(renderApp));
-  document.getElementById("btn-undo")?.addEventListener("click", () => undo(renderApp));
-  document.getElementById("btn-redo")?.addEventListener("click", () => redo(renderApp));
+  document.getElementById("btn-add-child")?.addEventListener("click", () => {
+    addChildNode(renderApp);
+    syncNotesDrawerWithActiveNode();
+  });
+  document.getElementById("btn-add-sibling")?.addEventListener("click", () => {
+    addSiblingNode(renderApp);
+    syncNotesDrawerWithActiveNode();
+  });
+  document.getElementById("btn-delete")?.addEventListener("click", () => {
+    deleteSelectedNodes(renderApp);
+    syncNotesDrawerWithActiveNode();
+  });
+  document.getElementById("btn-undo")?.addEventListener("click", () => {
+    undo(renderApp);
+    syncNotesDrawerWithActiveNode();
+  });
+  document.getElementById("btn-redo")?.addEventListener("click", () => {
+    redo(renderApp);
+    syncNotesDrawerWithActiveNode();
+  });
   document.getElementById("btn-node-note")?.addEventListener("click", () => openNotesDrawer());
 
   document.getElementById("btn-toggle-format")?.addEventListener("click", () => {
@@ -578,35 +739,16 @@ export function initEventListeners(renderApp) {
     layout?.classList.remove("sidebar-open");
   });
 
-  function zoomViewportCenter(factor) {
-    stopAllCameraAnimations();
-    const cx = (vp?.clientWidth || window.innerWidth) / 2;
-    const cy = (vp?.clientHeight || window.innerHeight) / 2;
-    const oldScale = camera.transform.scale;
-    const newScale = Math.min(3.0, Math.max(0.15, oldScale * factor));
-    camera.transform.x = cx - (cx - camera.transform.x) * (newScale / oldScale);
-    camera.transform.y = cy - (cy - camera.transform.y) * (newScale / oldScale);
-    camera.transform.scale = newScale;
-    const curTab = getActiveTab();
-    if (curTab) curTab.camera = { ...camera.transform };
-    requestTransformUpdate();
-  }
-
-  document.getElementById("btn-zoom-in")?.addEventListener("click", () => zoomViewportCenter(1.15));
-  document.getElementById("btn-zoom-out")?.addEventListener("click", () => zoomViewportCenter(1 / 1.15));
-  document.getElementById("txt-zoom-level")?.addEventListener("click", () => {
-    const cx = (vp?.clientWidth || window.innerWidth) / 2;
-    const cy = (vp?.clientHeight || window.innerHeight) / 2;
-    const oldScale = camera.transform.scale;
-    camera.transform.x = cx - (cx - camera.transform.x) * (1.0 / oldScale);
-    camera.transform.y = cy - (cy - camera.transform.y) * (1.0 / oldScale);
-    camera.transform.scale = 1.0;
-    const curTab = getActiveTab();
-    if (curTab) curTab.camera = { ...camera.transform };
-    requestTransformUpdate();
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => zoomViewportByFactor(1.15));
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => zoomViewportByFactor(1 / 1.15));
+  document.getElementById("txt-zoom-level")?.addEventListener("click", () => resetZoom100());
+  document.getElementById("btn-smart-center")?.addEventListener("click", () => {
+    smartAdaptiveCenter(null, true);
+    showToast("🎯 画布已自适应居中");
   });
 
   async function triggerOpenFile() {
+    closeNotesDrawer();
     try {
       const tauriResult = await callTauri("open_mindmap_file", {});
       if (!tauriResult || tauriResult === "CANCELLED") return;

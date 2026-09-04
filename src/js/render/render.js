@@ -1,7 +1,11 @@
+import { addChildNode, addSiblingNode } from "../interaction/node-actions.js";
+let gDropIndicator = null;
+export function setDropIndicator(ind) { gDropIndicator = ind; }
+
 import { computeLayout, assignCoordinates, getActiveFontFamily } from "../geometry/layout.js";
 import { state, findNode, getActiveTab, getAncestors, findParent } from "../core/state.js";
 import { saveSnapshot } from "../core/history.js";
-import { camera, locateFocusedNode } from "../core/camera.js";
+import { camera, locateFocusedNode, smartAdaptiveCenter } from "../core/camera.js";
 import { updateMinimap, syncMinimapViewportBox } from "./minimap.js";
 import { drawAppleSquircle } from "../geometry/squircle.js";
 import { drawNodeContent } from "./node-drawer.js";
@@ -29,37 +33,48 @@ export function resizeCanvas(force = false) {
   }
 }
 
-export function syncInlineEditorPosition() {
-  if (!state.editingNodeId || !inlineEditor || inlineEditor.classList.contains("hidden")) return;
-  const node = findNode(state.editingNodeId, state.mindData);
-  if (!node || node.x === undefined) return;
-
-  const s = camera.transform.scale;
+// 统一的 padX 与几何定位基准计算，确保输入框无论缩放、拖拽绝不跳动
+function getNodeEditorMetrics(node, s) {
   const isRoot = node.id === state.focusedRootId;
   const baseSize = node.fontSize ? parseFloat(node.fontSize) : (isRoot ? 15.5 : 13.5);
   const fontSizePx = baseSize * s;
   const lineHeightPx = (node.lineHeight || Math.round(baseSize * 1.35)) * s;
 
-  const padX = (isRoot ? 22 : 14) * s;
-  const extraLeft = (node.extraLeftWidth || 0) * s;
-  const textScreenX = node.x * s + camera.transform.x + padX + extraLeft;
+  const padX = Math.max(10, Math.round((node.width - (node.contentWidth || 0)) / 2));
+  const currentOffset = padX + (node.extraLeftWidth || 0);
+  // 与 node-drawer.js 的 textCenterX 严格保持同一条中心线
+  const textCenterWorldX = node.x + currentOffset + (node.textWidth || 0) / 2;
+  const textCenterScreenX = textCenterWorldX * s + camera.transform.x;
+
+  const editorWidth = Math.max((node.textWidth || 60) * s + 24, 90);
+  const textScreenX = textCenterScreenX - editorWidth / 2;
 
   const centerY = (node.y + node.height / 2) * s + camera.transform.y;
   const lines = node.lines || String(node.text ?? "").split(/\r?\n/);
   const totalTextH = (lines.length - 1) * lineHeightPx + fontSizePx;
   const textScreenY = centerY - totalTextH / 2 - 2;
 
-  const editorWidth = Math.max((node.textWidth || 60) * s + 16, 80);
-
-  inlineEditor.style.left = `${textScreenX - 4}px`;
-  inlineEditor.style.top = `${textScreenY}px`;
-  inlineEditor.style.width = `${editorWidth}px`;
-  inlineEditor.style.minHeight = `${Math.max(totalTextH + 6, lineHeightPx + 4)}px`;
-  inlineEditor.style.fontSize = `${fontSizePx}px`;
-  inlineEditor.style.lineHeight = `${lineHeightPx}px`;
+  return { fontSizePx, lineHeightPx, textScreenX, textScreenY, editorWidth, totalTextH };
 }
 
-function appendConnectionPath(path, node, child, lineStyle, isPrimary = false, boxStyle = "squircle") {
+export function syncInlineEditorPosition() {
+  if (!state.editingNodeId || !inlineEditor || inlineEditor.classList.contains("hidden")) return;
+  const node = findNode(state.editingNodeId, state.mindData);
+  if (!node || node.x === undefined) return;
+
+  const s = camera.transform.scale;
+  const m = getNodeEditorMetrics(node, s);
+
+  inlineEditor.style.left = `${m.textScreenX - 4}px`;
+  inlineEditor.style.top = `${m.textScreenY}px`;
+  inlineEditor.style.width = `${m.editorWidth}px`;
+  inlineEditor.style.minHeight = `${Math.max(m.totalTextH + 6, m.lineHeightPx + 4)}px`;
+  inlineEditor.style.fontSize = `${m.fontSizePx}px`;
+  inlineEditor.style.lineHeight = `${m.lineHeightPx}px`;
+  inlineEditor.style.textAlign = "center";
+}
+
+function appendConnectionPath(path, node, child, lineStyle, isPrimary = false, boxStyle = "squircle", isUltraLOD = false) {
   const isDown = child.branchDirection === "down";
   const isLeft = child.branchDirection === "left";
   const isParentUnderline = boxStyle === "underline";
@@ -87,17 +102,51 @@ function appendConnectionPath(path, node, child, lineStyle, isPrimary = false, b
   const dy = y2 - y1;
   path.moveTo(x1, y1);
 
-  if (lineStyle === "straight") {
+  if (isUltraLOD || lineStyle === "straight") {
     path.lineTo(x2, y2);
+  } else if (lineStyle === "rounded-ortho") {
+    const dirX = Math.sign(dx) || 1;
+    const dirY = Math.sign(dy) || 1;
+    if (isDown) {
+      const midY = y1 + dy * 0.5;
+      const r = Math.min(10, Math.abs(dx) / 2, Math.abs(dy) / 2);
+      if (r < 1 || dx === 0) {
+        path.lineTo(x1, midY); path.lineTo(x2, midY); path.lineTo(x2, y2);
+      } else {
+        path.lineTo(x1, midY - dirY * r);
+        path.arcTo(x1, midY, x1 + dirX * r, midY, r);
+        path.lineTo(x2 - dirX * r, midY);
+        path.arcTo(x2, midY, x2, midY + dirY * r, r);
+        path.lineTo(x2, y2);
+      }
+    } else {
+      const midX = x1 + dx * 0.5;
+      const r = Math.min(10, Math.abs(dx) / 2, Math.abs(dy) / 2);
+      if (r < 1 || dy === 0) {
+        path.lineTo(midX, y1); path.lineTo(midX, y2); path.lineTo(x2, y2);
+      } else {
+        path.lineTo(midX - dirX * r, y1);
+        path.arcTo(midX, y1, midX, y1 + dirY * r, r);
+        path.lineTo(midX, y2 - dirY * r);
+        path.arcTo(midX, y2, midX + dirX * r, y2, r);
+        path.lineTo(x2, y2);
+      }
+    }
   } else if (lineStyle === "sharp-ortho") {
     const mid = isDown ? (y1 + dy * 0.5) : (x1 + dx * 0.5);
     if (isDown) { path.lineTo(x1, mid); path.lineTo(x2, mid); path.lineTo(x2, y2); }
     else { path.lineTo(mid, y1); path.lineTo(mid, y2); path.lineTo(x2, y2); }
+  } else if (lineStyle === "arc-corner") {
+    if (isDown) {
+      path.bezierCurveTo(x1, y1 + dy * 0.7, x2, y1 + dy * 0.3, x2, y2);
+    } else {
+      path.bezierCurveTo(x1 + dx * 0.7, y1, x2 - dx * 0.3, y2, x2, y2);
+    }
   } else {
     if (isDown) {
-      path.bezierCurveTo(x1, y1 + dy * 0.45, x2, y2 - dy * 0.45, x2, y2);
+      path.bezierCurveTo(x1, y1 + dy * 0.5, x2, y2 - dy * 0.5, x2, y2);
     } else {
-      path.bezierCurveTo(x1 + dx * 0.45, y1, x2 - dx * 0.45, y2, x2, y2);
+      path.bezierCurveTo(x1 + dx * 0.5, y1, x2 - dx * 0.5, y2, x2, y2);
     }
   }
 }
@@ -106,7 +155,7 @@ function isRectVisible(x, y, w, h, vp) {
   return !(x + w < vp.left || x > vp.right || y + h < vp.top || y > vp.bottom);
 }
 
-function collectRenderPasses(node, level, state, vpBounds, isRootOfView, primaryBatches, secondaryBatches, visibleNodes) {
+function collectRenderPasses(node, level, state, vpBounds, isRootOfView, primaryBatches, secondaryBatches, visibleNodes, isUltraLOD) {
   if (!isRootOfView && node.treeMinX !== undefined) {
     const tw = (node.treeMaxX || (node.x + node.width)) - node.treeMinX;
     const th = (node.treeMaxY || (node.y + node.height)) - node.treeMinY;
@@ -123,8 +172,8 @@ function collectRenderPasses(node, level, state, vpBounds, isRootOfView, primary
       const targetBatches = isRootOfView ? primaryBatches : secondaryBatches;
       let path = targetBatches.get(color);
       if (!path) { path = new Path2D(); targetBatches.set(color, path); }
-      appendConnectionPath(path, node, child, lineStyle, isRootOfView, boxStyle);
-      collectRenderPasses(child, level + 1, state, vpBounds, false, primaryBatches, secondaryBatches, visibleNodes);
+      appendConnectionPath(path, node, child, lineStyle, isRootOfView, boxStyle, isUltraLOD);
+      collectRenderPasses(child, level + 1, state, vpBounds, false, primaryBatches, secondaryBatches, visibleNodes, isUltraLOD);
     }
   }
 
@@ -154,6 +203,7 @@ export function render(state, callbacks) {
   const vpW = cachedVpWidth || window.innerWidth;
   const vpH = cachedVpHeight || window.innerHeight;
   const s = camera.transform.scale;
+  const isUltraLOD = s < 0.25;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -167,7 +217,7 @@ export function render(state, callbacks) {
   const primaryBatches = new Map();
   const secondaryBatches = new Map();
   const visibleNodes = [];
-  collectRenderPasses(currentRoot, 0, state, vpBounds, true, primaryBatches, secondaryBatches, visibleNodes);
+  collectRenderPasses(currentRoot, 0, state, vpBounds, true, primaryBatches, secondaryBatches, visibleNodes, isUltraLOD);
 
   ctx.save();
   ctx.setTransform(s * dpr, 0, 0, s * dpr, camera.transform.x * dpr, camera.transform.y * dpr);
@@ -175,9 +225,9 @@ export function render(state, callbacks) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  const primaryStrokeWidth = 1.8 / s;
-  const secondaryStrokeWidth = 1.8 / s;
-  const nodeBorderWidth = 1.0 / s;
+  const primaryStrokeWidth = 3.0 / s;
+  const secondaryStrokeWidth = 2.2 / s;
+  const nodeBorderWidth = 2.0 / s;
 
   ctx.lineWidth = secondaryStrokeWidth;
   secondaryBatches.forEach((path, color) => { ctx.strokeStyle = color; ctx.stroke(path); });
@@ -186,17 +236,24 @@ export function render(state, callbacks) {
   primaryBatches.forEach((path, color) => { ctx.strokeStyle = color; ctx.stroke(path); });
 
   const boxStyle = state.boxStyle || "squircle";
-  const isDarkCanvas = ["space-gray", "midnight-abyss", "prussian-navy", "slate-chalkboard", "cyber-violet", "obsidian-coffee"].includes(state.canvasBgColor);
-  const enableShadows = !state.isInteracting;
+  const isGlobalDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const isDarkCanvas = isGlobalDark || ["space-gray", "midnight-abyss", "prussian-navy", "slate-chalkboard", "cyber-violet", "obsidian-coffee"].includes(state.canvasBgColor);
+  const enableShadows = !state.isInteracting && visibleNodes.length < 1500 && s >= 0.35;
 
   for (let i = 0; i < visibleNodes.length; i++) {
     const { node, isRootOfView } = visibleNodes[i];
     const isSelected = state.selectedIds.has(node.id);
     const r = isRootOfView ? 14 : 9.5;
 
+    if (isUltraLOD && !isRootOfView) {
+      ctx.fillStyle = node.colorTheme ? (node.colorTheme.solid || node.colorTheme.border) : "#94a3b8";
+      ctx.fillRect(node.x, node.y, node.width, node.height);
+      continue;
+    }
+
     if (boxStyle !== "underline") {
       ctx.save();
-      if (boxStyle === "rect") {
+      if (boxStyle === "rect" || s < 0.35) {
         ctx.beginPath();
         ctx.rect(node.x, node.y, node.width, node.height);
       } else {
@@ -206,7 +263,7 @@ export function render(state, callbacks) {
       if (isRootOfView) {
         if (enableShadows) {
           ctx.shadowColor = "rgba(0, 113, 227, 0.25)";
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 12;
           ctx.shadowOffsetY = 2;
         }
 
@@ -218,13 +275,13 @@ export function render(state, callbacks) {
 
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-        ctx.lineWidth = nodeBorderWidth;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.50)";
+        ctx.lineWidth = 2.4 / s;
         ctx.stroke();
       } else if (boxStyle === "solid") {
         if (enableShadows) {
           ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
-          ctx.shadowBlur = 5;
+          ctx.shadowBlur = 6;
           ctx.shadowOffsetY = 1.5;
         }
 
@@ -233,7 +290,7 @@ export function render(state, callbacks) {
 
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.30)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.40)";
         ctx.lineWidth = nodeBorderWidth;
         ctx.stroke();
       } else {
@@ -248,7 +305,7 @@ export function render(state, callbacks) {
 
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = node.colorTheme ? node.colorTheme.border : (isDarkCanvas ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.11)");
+        ctx.strokeStyle = node.colorTheme ? node.colorTheme.border : (isDarkCanvas ? "rgba(255, 255, 255, 0.25)" : "rgba(0, 0, 0, 0.18)");
         ctx.lineWidth = nodeBorderWidth;
         ctx.stroke();
       }
@@ -258,14 +315,15 @@ export function render(state, callbacks) {
       ctx.moveTo(node.x, node.y + node.height);
       ctx.lineTo(node.x + node.width, node.y + node.height);
       ctx.strokeStyle = node.colorTheme ? node.colorTheme.line : (isDarkCanvas ? "#94a3b8" : "#86868b");
-      ctx.lineWidth = isSelected ? (nodeBorderWidth * 2.0) : (nodeBorderWidth * 1.5);
+      const defaultUnderlineWidth = isRootOfView ? (2.8 / s) : (2.2 / s);
+      ctx.lineWidth = isSelected ? (3.6 / s) : defaultUnderlineWidth;
       ctx.stroke();
     }
 
     if (isSelected && boxStyle !== "underline") {
       ctx.save();
       const offset = 2.5;
-      if (boxStyle === "rect") {
+      if (boxStyle === "rect" || s < 0.35) {
         ctx.beginPath();
         ctx.rect(node.x - offset, node.y - offset, node.width + offset * 2, node.height + offset * 2);
       } else {
@@ -276,7 +334,7 @@ export function render(state, callbacks) {
         ctx.shadowBlur = 6;
       }
       ctx.strokeStyle = "#0071e3";
-      ctx.lineWidth = 1.8 / s;
+      ctx.lineWidth = 2.6 / s;
       ctx.stroke();
       ctx.restore();
     }
@@ -284,18 +342,52 @@ export function render(state, callbacks) {
 
   for (let i = 0; i < visibleNodes.length; i++) {
     const { node, level, isRootOfView } = visibleNodes[i];
-    drawNodeContent(ctx, node, level, isRootOfView, state);
+    drawNodeContent(ctx, node, level, isRootOfView, state, s);
+  }
+
+  // 🌟 绘制跨层级改父级（矩形光环）或兄弟插入指示线
+  if (gDropIndicator) {
+    ctx.save();
+    if (gDropIndicator.type === "reparent") {
+      // 目标父节点吸附高亮
+      ctx.strokeStyle = "#0071e3";
+      ctx.lineWidth = 2.5 / s;
+      drawAppleSquircle(ctx, gDropIndicator.x - 3, gDropIndicator.y - 3, gDropIndicator.width + 6, gDropIndicator.height + 6, 12);
+      ctx.fillStyle = "rgba(0, 113, 227, 0.12)";
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      // 兄弟插入定位线
+      ctx.strokeStyle = "#0071e3";
+      ctx.lineWidth = Math.max(2.5, 3.2 / s);
+      ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(0, 113, 227, 0.5)";
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(gDropIndicator.x1, gDropIndicator.y1);
+      ctx.lineTo(gDropIndicator.x2, gDropIndicator.y2);
+      ctx.stroke();
+
+      ctx.fillStyle = "#0071e3";
+      ctx.beginPath();
+      ctx.arc(gDropIndicator.x1, gDropIndicator.y1, 4.5 / s, 0, Math.PI * 2);
+      ctx.arc(gDropIndicator.x2, gDropIndicator.y2, 4.5 / s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   ctx.restore();
 
+  updateBreadcrumbs(state, (id) => {
+    state.focusedRootId = id;
+    state.isLayoutDirty = true;
+    callbacks.onRender();
+    smartAdaptiveCenter(null, true);
+  });
+
   if (hadLayoutRecalc) {
     updateMinimap();
-    updateBreadcrumbs(state, (id) => {
-      state.focusedRootId = id;
-      state.isLayoutDirty = true;
-      callbacks.onRender();
-    });
   } else {
     syncMinimapViewportBox();
   }
@@ -306,37 +398,49 @@ export function render(state, callbacks) {
 export function updateBreadcrumbs(state, onSelectRoot) {
   const bar = document.getElementById("breadcrumb-bar");
   const linksContainer = document.getElementById("breadcrumb-links");
+  const homeIcon = document.getElementById("breadcrumb-home-icon");
   const exitBtn = document.getElementById("btn-exit-focus");
-  const isFocused = state.focusedRootId && state.focusedRootId !== state.mindData?.id && state.focusedRootId !== "root";
+  
+  const rootId = state.mindData?.id || "root";
+  const isFocused = Boolean(state.focusedRootId && state.focusedRootId !== rootId);
 
   if (!bar || !linksContainer) return;
+  
   if (!isFocused) {
     bar.classList.add("hidden");
     return;
   }
 
   const ancestors = getAncestors(state.focusedRootId, state.mindData) || [];
+  
   linksContainer.innerHTML = ancestors.map((node, i) => {
     const isLast = i === ancestors.length - 1;
+    const rawTitle = (node.icon ? node.icon + " " : "") + (node.text || "分支");
+    const safeTitle = String(rawTitle).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
     return `
-      <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-id="${node.id}">${node.text}</span>
-      ${!isLast ? '<span class="breadcrumb-sep">/</span>' : ''}
+      <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-id="${node.id}" title="${safeTitle}">${safeTitle}</span>
+      ${!isLast ? '<span class="breadcrumb-sep">›</span>' : ''}
     `;
   }).join("");
 
-  linksContainer.querySelectorAll(".breadcrumb-item").forEach(item => {
+  linksContainer.querySelectorAll(".breadcrumb-item:not(.active)").forEach(item => {
     item.onclick = (e) => {
       e.stopPropagation();
-      state.isLayoutDirty = true;
       onSelectRoot(item.dataset.id);
     };
   });
 
+  if (homeIcon) {
+    homeIcon.onclick = (e) => {
+      e.stopPropagation();
+      onSelectRoot(rootId);
+    };
+  }
+
   if (exitBtn) {
     exitBtn.onclick = (e) => {
       e.stopPropagation();
-      state.isLayoutDirty = true;
-      onSelectRoot(state.mindData?.id || "root");
+      onSelectRoot(rootId);
     };
   }
 
@@ -350,29 +454,20 @@ export function startEditNode(node, state, onRender, isNewNode = false) {
   const originalText = String(node.text ?? "");
   const s = camera.transform.scale;
   const isRoot = node.id === state.focusedRootId;
-  const baseSize = node.fontSize ? parseFloat(node.fontSize) : (isRoot ? 15.5 : 13.5);
-  const fontSizePx = baseSize * s;
-  const lineHeightPx = (node.lineHeight || Math.round(baseSize * 1.35)) * s;
+  const m = getNodeEditorMetrics(node, s);
 
-  const padX = (isRoot ? 22 : 14) * s;
-  const extraLeft = (node.extraLeftWidth || 0) * s;
-  const textScreenX = node.x * s + camera.transform.x + padX + extraLeft;
-  const centerY = (node.y + node.height / 2) * s + camera.transform.y;
-  const lines = node.lines || String(node.text ?? "").split(/\r?\n/);
-  const totalTextH = (lines.length - 1) * lineHeightPx + fontSizePx;
-  const textScreenY = centerY - totalTextH / 2 - 2;
-
-  const editorWidth = Math.max((node.textWidth || 60) * s + 16, 80);
-
-  inlineEditor.style.left = `${textScreenX - 4}px`;
-  inlineEditor.style.top = `${textScreenY}px`;
-  inlineEditor.style.width = `${editorWidth}px`;
-  inlineEditor.style.minHeight = `${Math.max(totalTextH + 6, lineHeightPx + 4)}px`;
-  inlineEditor.style.fontSize = `${fontSizePx}px`;
-  inlineEditor.style.lineHeight = `${lineHeightPx}px`;
+  inlineEditor.style.left = `${m.textScreenX - 4}px`;
+  inlineEditor.style.top = `${m.textScreenY}px`;
+  inlineEditor.style.width = `${m.editorWidth}px`;
+  inlineEditor.style.minHeight = `${Math.max(m.totalTextH + 6, m.lineHeightPx + 4)}px`;
+  inlineEditor.style.fontSize = `${m.fontSizePx}px`;
+  inlineEditor.style.lineHeight = `${m.lineHeightPx}px`;
   inlineEditor.style.fontFamily = getActiveFontFamily();
   inlineEditor.style.fontWeight = String(node.fontWeight || (isRoot ? "700" : "500"));
-  inlineEditor.value = node.text || "";
+  inlineEditor.style.fontStyle = node.fontStyle || "normal";
+  inlineEditor.style.textDecoration = node.textDecoration || "none";
+  inlineEditor.maxLength = 500;
+  inlineEditor.value = (node.text || "").slice(0, 500);
   inlineEditor.classList.remove("hidden");
 
   inlineEditor.focus();
@@ -380,7 +475,7 @@ export function startEditNode(node, state, onRender, isNewNode = false) {
 
   const autoGrowHeight = () => {
     inlineEditor.style.height = "auto";
-    inlineEditor.style.height = `${Math.max(lineHeightPx + 4, inlineEditor.scrollHeight)}px`;
+    inlineEditor.style.height = `${Math.max(m.lineHeightPx + 4, inlineEditor.scrollHeight)}px`;
   };
   autoGrowHeight();
   inlineEditor.oninput = autoGrowHeight;
@@ -391,10 +486,11 @@ export function startEditNode(node, state, onRender, isNewNode = false) {
     finished = true;
     inlineEditor.oninput = null;
     inlineEditor.classList.add("hidden");
-    const val = inlineEditor.value.trim();
+    
+    // 🌟 致命崩溃 Bug 修复：将 const 改为可重新赋值的 let，防止溢出截取时 TypeError
+    let val = inlineEditor.value.trim();
     state.editingNodeId = null;
 
-    // 🌟 按 Esc 取消：完全放弃改动，决不标记脏文件
     if (isCancelled) {
       if (isNewNode) {
         const parent = findParent(node.id, state.mindData);
@@ -423,7 +519,7 @@ export function startEditNode(node, state, onRender, isNewNode = false) {
       }
     }
 
-    // 🌟 核心修复：只有文字发生实质性修改，才触发 saveSnapshot 与脏标记！
+    if (val.length > 500) val = val.slice(0, 500);
     if (val !== "" && val !== originalText) {
       node.text = val;
       if (node.id === state.mindData?.id) {
@@ -435,27 +531,9 @@ export function startEditNode(node, state, onRender, isNewNode = false) {
     onRender();
 
     if (nextAction === "sibling" && val !== "") {
-      const parent = findParent(node.id, state.mindData);
-      if (parent) {
-        const sib = { id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4), text: "新主题", collapsed: false, children: [] };
-        const idx = parent.children.findIndex(c => c.id === node.id);
-        parent.children.splice(idx + 1, 0, sib);
-        state.selectedIds = new Set([sib.id]);
-        saveSnapshot();
-        onRender();
-        locateFocusedNode(sib.id, false);
-        startEditNode(sib, state, onRender, true);
-      }
+      addSiblingNode(onRender);
     } else if (nextAction === "child" && val !== "") {
-      const child = { id: "node_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4), text: "新分支", collapsed: false, children: [] };
-      if (!node.children) node.children = [];
-      node.children.push(child);
-      node.collapsed = false;
-      state.selectedIds = new Set([child.id]);
-      saveSnapshot();
-      onRender();
-      locateFocusedNode(child.id, false);
-      startEditNode(child, state, onRender, true);
+      addChildNode(onRender);
     }
   };
 
@@ -464,7 +542,7 @@ export function startEditNode(node, state, onRender, isNewNode = false) {
     e.stopPropagation();
     if (e.key === "Enter") {
       if (e.shiftKey) setTimeout(autoGrowHeight, 10);
-      else { e.preventDefault(); finish("sibling", false); }
+      else { e.preventDefault(); finish("none", false); }
     } else if (e.key === "Tab") {
       e.preventDefault();
       finish("child", false);

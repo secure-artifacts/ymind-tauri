@@ -1,15 +1,9 @@
-import { state, getAncestors } from "../core/state.js";
-import { showToast } from "./dialog.js";
+import { state } from "../core/state.js";
+import { showToast, escapeHtml } from "./dialog.js";
 
 let cardDeck = [];
 let currentCardIndex = 0;
 let stats = { mastered: 0, review: 0, forgot: 0 };
-
-function escapeHtml(str) {
-  return String(str || "").replace(/[&<>"']/g, m => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[m]));
-}
 
 export function toggleRecallMode(renderApp) {
   state.isRecallMode = !state.isRecallMode;
@@ -21,22 +15,17 @@ export function toggleRecallMode(renderApp) {
 
 export function initFlashcards(renderApp) {
   const modal = document.getElementById("apple-flashcards-modal");
-  const cardContainer = document.getElementById("flashcard-3d-wrap");
-  const btnClose = document.getElementById("btn-close-flashcards");
-  const btnFlip = document.getElementById("btn-flip-card");
-  const btnPrev = document.getElementById("btn-card-prev");
-  const btnNext = document.getElementById("btn-card-next");
+  if (!modal) return;
 
-  btnClose?.addEventListener("click", closeFlashcardModal);
-  btnFlip?.addEventListener("click", flipCard);
-  cardContainer?.addEventListener("click", flipCard);
+  modal.querySelector("#btn-close-flashcards")?.addEventListener("click", closeFlashcardModal);
+  modal.querySelector("#btn-flip-card")?.addEventListener("click", flipCard);
+  modal.querySelector("#flashcard-3d-wrap")?.addEventListener("click", flipCard);
+  modal.querySelector("#btn-card-prev")?.addEventListener("click", () => navigateCard(-1));
+  modal.querySelector("#btn-card-next")?.addEventListener("click", () => navigateCard(1));
 
-  btnPrev?.addEventListener("click", () => navigateCard(-1));
-  btnNext?.addEventListener("click", () => navigateCard(1));
-
-  document.getElementById("btn-rate-forgot")?.addEventListener("click", () => rateCard("forgot"));
-  document.getElementById("btn-rate-review")?.addEventListener("click", () => rateCard("review"));
-  document.getElementById("btn-rate-mastered")?.addEventListener("click", () => rateCard("mastered"));
+  modal.querySelector("#btn-rate-forgot")?.addEventListener("click", () => rateCard("forgot"));
+  modal.querySelector("#btn-rate-review")?.addEventListener("click", () => rateCard("review"));
+  modal.querySelector("#btn-rate-mastered")?.addEventListener("click", () => rateCard("mastered"));
 
   window.addEventListener("keydown", (e) => {
     if (!modal || modal.classList.contains("hidden")) return;

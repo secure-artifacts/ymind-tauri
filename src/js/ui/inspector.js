@@ -1,23 +1,8 @@
 import { resizeCanvas } from "../render/render.js";
 import { getActiveTab, saveSnapshot, getPrimarySelectedNode, findNode, state } from "../core/state.js";
 import { invalidateFontCache } from "../geometry/layout.js";
-import { COLOR_PALETTES } from "../data/palettes.js";
+import { COLOR_PALETTES, BG_COLOR_MAP } from "../data/palettes.js";
 import { bus, EVENTS } from "../core/event-bus.js";
-
-const BG_COLOR_MAP = {
-  "studio-white": "#f8fafc", "warm-ivory": "#faf6ed", "vintage-parchment": "#f4eedb",
-  "matcha-mist": "#f1f7f2", "lavender-fog": "#f7f4fb", "glacier-blue": "#f0f6fb",
-  "morandi-stone": "#eeedf0", "space-gray": "#181a1f", "midnight-abyss": "#09090b",
-  "prussian-navy": "#0c1a2e", "slate-chalkboard": "#13241b", "sakura-blossom": "#fff5f5",
-  "sand-dune": "#f7f3e8", "cyber-violet": "#150e28", "obsidian-coffee": "#1c1614"
-};
-
-const PALETTE_CATEGORIES = {
-  "apple-classic": "classic", "sketch-hand": "classic", "bauhaus-modern": "classic", "cambridge-library": "classic",
-  "japanese-matcha": "nature", "nordic-forest": "nature", "deep-ocean": "nature", "fresh-mint": "nature", "botanical-sage": "nature",
-  "morandi-nature": "muted", "terracotta-clay": "muted", "scandinavian-frost": "muted", "caramel-latte": "muted", "macaron-pastel": "muted",
-  "sunset-glow": "dark", "mystic-nebula": "dark", "retro-synthwave": "dark", "cyberpunk": "dark", "aurora-dusk": "dark", "graphite-mono": "dark"
-};
 
 function applyNodeStyle(updateFn) {
   const targetIds = (state.selectedIds && state.selectedIds.size > 0)
@@ -69,24 +54,38 @@ export function syncInspectorUi() {
   }
 
   const primaryNode = getPrimarySelectedNode();
+  const btnBold = document.getElementById("btn-text-bold");
+  const btnItalic = document.getElementById("btn-text-italic");
+  const btnStrike = document.getElementById("btn-text-strike");
+
   if (!primaryNode) {
     document.querySelectorAll("#node-font-size-options .style-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll("#node-font-weight-options .style-btn").forEach(b => b.classList.remove("active"));
+    btnBold?.classList.remove("active");
+    btnItalic?.classList.remove("active");
+    btnStrike?.classList.remove("active");
     document.querySelectorAll("#node-text-color-options .bg-color-swatch").forEach(c => c.classList.remove("active"));
   } else {
     const isRoot = primaryNode.id === (state.focusedRootId || state.mindData?.id);
     const curSize = primaryNode.fontSize ? String(parseInt(primaryNode.fontSize, 10)) : (isRoot ? "16" : "14");
-    let curWeight = primaryNode.fontWeight ? String(primaryNode.fontWeight) : (isRoot ? "700" : "500");
-    if (curWeight === "bold") curWeight = "700";
-    if (curWeight === "normal" || curWeight === "500") curWeight = "400";
+    
+    // 粗体反显
+    const isBold = primaryNode.fontWeight === "700" || primaryNode.fontWeight === "bold" || (isRoot && !primaryNode.fontWeight);
+    btnBold?.classList.toggle("active", Boolean(isBold));
+
+    // 斜体反显
+    const isItalic = primaryNode.fontStyle === "italic";
+    btnItalic?.classList.toggle("active", Boolean(isItalic));
+
+    // 删除线反显
+    const isStrike = primaryNode.textDecoration === "line-through";
+    btnStrike?.classList.toggle("active", Boolean(isStrike));
+
     const curColor = primaryNode.textColor || "default";
 
     document.querySelectorAll("#node-font-size-options .style-btn").forEach(b => {
       b.classList.toggle("active", b.dataset.size === curSize || (curSize === "16" && b.dataset.size === "14") || (curSize === "13.5" && b.dataset.size === "14"));
     });
-    document.querySelectorAll("#node-font-weight-options .style-btn").forEach(b => {
-      b.classList.toggle("active", b.dataset.weight === curWeight || (curWeight === "400" && b.dataset.weight === "400"));
-    });
+
     document.querySelectorAll("#node-text-color-options .bg-color-swatch").forEach(c => {
       c.classList.toggle("active", c.dataset.color === curColor);
     });
@@ -113,9 +112,8 @@ export function renderPaletteGrid() {
 
   const curPalette = getActiveTab()?.colorPalette || "apple-classic";
   
-  // 🌟 100% 完整填充配色方案名称、Emoji 与 6 阶彩色渐变色块
   grid.innerHTML = Object.values(COLOR_PALETTES).map(p => {
-    const cat = PALETTE_CATEGORIES[p.id] || "classic";
+    const cat = p.cat || "classic";
     const barHtml = (p.branches || []).slice(0, 6).map(b => `<span style="background:${b.line}"></span>`).join("");
     const isCur = p.id === curPalette;
     return `
@@ -147,7 +145,6 @@ export function initInspectorEvents() {
       const item = h.parentElement;
       if (!item) return;
       item.classList.toggle("open");
-      // 🌟 折叠首次展开时触发核验，确保网格 100% 正确呈现
       if (item.classList.contains("open")) {
         if (item.dataset.section === "palette") {
           renderPaletteGrid();
@@ -157,6 +154,7 @@ export function initInspectorEvents() {
     };
   });
 
+  // 字号切换
   document.querySelectorAll("#node-font-size-options .style-btn").forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -164,13 +162,21 @@ export function initInspectorEvents() {
     };
   });
 
-  document.querySelectorAll("#node-font-weight-options .style-btn").forEach(btn => {
-    btn.onclick = (e) => {
+  const decorConfigs = [
+    ["btn-text-bold", "fontWeight", ["700", "bold"], "400", "700"],
+    ["btn-text-italic", "fontStyle", ["italic"], "normal", "italic"],
+    ["btn-text-strike", "textDecoration", ["line-through"], "none", "line-through"]
+  ];
+  decorConfigs.forEach(([btnId, prop, activeMatches, offVal, onVal]) => {
+    document.getElementById(btnId)?.addEventListener("click", (e) => {
       e.stopPropagation();
-      applyNodeStyle(node => { node.fontWeight = btn.dataset.weight; });
-    };
+      const primary = getPrimarySelectedNode();
+      const isActive = activeMatches.includes(primary?.[prop]);
+      applyNodeStyle(node => { node[prop] = isActive ? offVal : onVal; });
+    });
   });
 
+  // 颜色切换
   document.querySelectorAll("#node-text-color-options .bg-color-swatch").forEach(swatch => {
     swatch.onclick = (e) => {
       e.stopPropagation();
@@ -192,7 +198,6 @@ export function initInspectorEvents() {
     };
   });
 
-  // 初次加载即刻渲染
   renderPaletteGrid();
 
   document.querySelectorAll("#palette-category-tabs .palette-cat-btn").forEach(btn => {
@@ -207,57 +212,26 @@ export function initInspectorEvents() {
     };
   });
 
-  document.querySelectorAll("#line-style-options .style-btn").forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const tab = getActiveTab();
-      if (tab) {
-        tab.lineStyle = btn.dataset.line;
-        saveSnapshot();
-        syncInspectorUi();
-        bus.emit(EVENTS.RENDER_APP);
-      }
-    };
-  });
+  const attrConfigs = [
+    ["#line-style-options .style-btn", "line", "lineStyle"],
+    ["#box-style-options .style-btn", "box", "boxStyle"],
+    ["#menu-bg-colors .bg-color-swatch", "color", "canvasBgColor"],
+    ["#menu-bg-patterns .bg-pattern-card", "pattern", "canvasBgPattern"]
+  ];
 
-  document.querySelectorAll("#box-style-options .style-btn").forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const tab = getActiveTab();
-      if (tab) {
-        tab.boxStyle = btn.dataset.box;
-        saveSnapshot();
-        syncInspectorUi();
-        bus.emit(EVENTS.RENDER_APP);
-      }
-    };
-  });
-
-  document.querySelectorAll("#menu-bg-colors .bg-color-swatch").forEach(swatch => {
-    swatch.onclick = (e) => {
-      e.stopPropagation();
-      const tab = getActiveTab();
-      if (tab) {
-        tab.canvasBgColor = swatch.dataset.color;
-        applyCanvasThemeToBody(tab.canvasBgColor, tab.canvasBgPattern || "dots");
-        saveSnapshot();
-        syncInspectorUi();
-        bus.emit(EVENTS.RENDER_APP);
-      }
-    };
-  });
-
-  document.querySelectorAll("#menu-bg-patterns .bg-pattern-card").forEach(card => {
-    card.onclick = (e) => {
-      e.stopPropagation();
-      const tab = getActiveTab();
-      if (tab) {
-        tab.canvasBgPattern = card.dataset.pattern;
-        applyCanvasThemeToBody(tab.canvasBgColor || "studio-white", tab.canvasBgPattern);
-        saveSnapshot();
-        syncInspectorUi();
-        bus.emit(EVENTS.RENDER_APP);
-      }
-    };
+  attrConfigs.forEach(([selector, dataKey, prop]) => {
+    document.querySelectorAll(selector).forEach(el => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const tab = getActiveTab();
+        if (tab) {
+          tab[prop] = el.dataset[dataKey];
+          if (prop.startsWith("canvasBg")) applyCanvasThemeToBody(tab.canvasBgColor, tab.canvasBgPattern || "dots");
+          saveSnapshot();
+          syncInspectorUi();
+          bus.emit(EVENTS.RENDER_APP);
+        }
+      };
+    });
   });
 }

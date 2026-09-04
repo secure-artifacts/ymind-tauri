@@ -1,20 +1,63 @@
-function escapeHtml(s) {
+export function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
+
 export function sanitizeFilename(n) {
   return (n || "").replace(/[\\/:*?"<>|\r\n\t]/g, "_").trim() || "思维导图";
 }
-export function showToast(m) {
-  let t = document.getElementById("apple-toast") || Object.assign(document.createElement("div"), { id: "apple-toast", className: "apple-toast" });
-  document.body.appendChild(t);
-  t.innerText = m;
-  t.classList.remove("hidden", "fade-out");
-  t.classList.add("show");
-  clearTimeout(window.__TOAST_TIMER__);
-  window.__TOAST_TIMER__ = setTimeout(() => {
-    t.classList.add("fade-out");
-    setTimeout(() => t.classList.add("hidden"), 300);
-  }, 1800);
+
+let activeToastTimer = null;
+let activeToastElement = null;
+
+/**
+ * 🍏 灵动岛风格超高定 Apple 悬浮胶囊微弹窗
+ * - 支持自动分离首字符 Emoji / 图标
+ * - 连击平滑呼吸形变过渡，永不生硬跳帧
+ */
+export function showToast(message, duration = 2200) {
+  if (!activeToastElement) {
+    activeToastElement = document.getElementById("apple-toast");
+    if (!activeToastElement) {
+      activeToastElement = document.createElement("div");
+      activeToastElement.id = "apple-toast";
+      activeToastElement.className = "apple-toast hidden";
+      document.body.appendChild(activeToastElement);
+    }
+  }
+
+  const rawMsg = String(message || "").trim();
+  // 匹配前置 Emoji 或特色符号 (如 🎯, 🌳, 💾, 🔒, 🚩, 🗑️ 等)
+  const emojiMatch = rawMsg.match(/^(\p{Extended_Pictographic}|\uFE0F|[★☆⚡⚠️✅❌ℹ️])+[\s·]*/u);
+  
+  let iconHtml = "";
+  let textHtml = "";
+
+  if (emojiMatch) {
+    const iconStr = emojiMatch[0].trim();
+    const restText = rawMsg.slice(emojiMatch[0].length).trim();
+    iconHtml = `<span class="apple-toast-icon">${iconStr}</span>`;
+    textHtml = `<span class="apple-toast-text">${escapeHtml(restText)}</span>`;
+  } else {
+    textHtml = `<span class="apple-toast-text">${escapeHtml(rawMsg)}</span>`;
+  }
+
+  clearTimeout(activeToastTimer);
+
+  activeToastElement.innerHTML = `${iconHtml}${textHtml}`;
+  activeToastElement.classList.remove("hidden", "fade-out");
+
+  // 强制回流以重新触发完整的 Apple 动力学弹簧曲线
+  void activeToastElement.offsetWidth;
+  activeToastElement.classList.add("show");
+
+  activeToastTimer = setTimeout(() => {
+    activeToastElement.classList.remove("show");
+    activeToastElement.classList.add("fade-out");
+    setTimeout(() => {
+      activeToastElement.classList.add("hidden");
+      activeToastElement.classList.remove("fade-out");
+    }, 280);
+  }, duration);
 }
 
 let activeDialogCleanup = null;
@@ -103,4 +146,34 @@ export function appPrompt({ title = "请输入", message = "", placeholder = "",
     overlay.querySelector("#dialog-btn-confirm")?.addEventListener("click", () => cleanup(input.value));
     overlay.querySelector("#dialog-btn-cancel")?.addEventListener("click", () => cleanup(null));
   });
+}
+
+let activeBannerTimer = null;
+export function showAppleBanner({ icon = "ℹ️", title = "", message = "", type = "info", duration = 3200 } = {}) {
+  let el = document.getElementById("apple-banner-drop");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "apple-banner-drop";
+    el.className = "apple-banner-drop";
+    document.body.appendChild(el);
+  }
+
+  clearTimeout(activeBannerTimer);
+
+  el.innerHTML = `
+    <div class="apple-banner-icon-wrap ${type}">${icon}</div>
+    <div class="apple-banner-content">
+      <div class="apple-banner-title">${escapeHtml(title)}</div>
+      <div class="apple-banner-message" title="${escapeHtml(message)}">${escapeHtml(message)}</div>
+    </div>
+  `;
+
+  el.classList.remove("leave");
+  void el.offsetWidth;
+  el.classList.add("show");
+
+  activeBannerTimer = setTimeout(() => {
+    el.classList.remove("show");
+    el.classList.add("leave");
+  }, duration);
 }

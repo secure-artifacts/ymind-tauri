@@ -74,3 +74,28 @@ input, textarea, select, .inline-editor, [contenteditable="true"] {
 }
 
 .hidden { display: none !important; }
+
+[data-theme="dark"] {
+  --system-bg: #0f1218;
+  --system-grouped-bg: #161b26;
+  --panel-bg: rgba(22, 27, 38, 0.82);
+  --panel-bg-elevated: rgba(28, 35, 48, 0.94);
+  --panel-solid: #1b212f;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-quaternary: #64748b;
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-card: rgba(255, 255, 255, 0.12);
+  --border-inner-light: rgba(255, 255, 255, 0.15);
+
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-elevated: 0 8px 24px -4px rgba(0, 0, 0, 0.55);
+  --shadow-float: 0 16px 44px -8px rgba(0, 0, 0, 0.7);
+  --shadow-popover: 0 24px 60px rgba(0, 0, 0, 0.75), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.32); }
