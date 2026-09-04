@@ -1,88 +1,136 @@
-<div align="center">
+# 🚀 YMind Pro Studio (v3.0 Ultra)
 
-# 🚀 YMind Pro Studio
-
-**Next-Gen Apple-Crafted Vector Mind Mapping, Outliner & Active Recall Studio**  
-*极简 Apple 原生美学 · 万级节点流式渲染 · 线性大纲双向同步 · 3D 抽认卡复习 · 军工级双层信封加密*
-
-[![Version](https://img.shields.io/badge/version-v3.0--ultra-0071e3?style=flat-square&logo=apple)](https://github.com/)
-[![License](https://img.shields.io/badge/license-MIT-34c759?style=flat-square)](LICENSE)
-[![Frame-Rate](https://img.shields.io/badge/rendering-120_FPS-ff9500?style=flat-square&logo=speedtest)](https://github.com/)
-[![Security](https://img.shields.io/badge/encryption-AES--256--GCM-ff3b30?style=flat-square&logo=vault)](https://github.com/)
-[![Offline](https://img.shields.io/badge/privacy-100%25_Local_Offline-64748b?style=flat-square&logo=icloud)](https://github.com/)
-
-[🇨🇳 简体中文](#-中文文档) | [🇺🇸 English](#-english-docs)
-
-</div>
+> **新一代 Apple visionOS / macOS Sequoia 极致美学 · 100% 离线数据主权 · 结构化心智模型与知识内化工作台**
 
 ---
 
-<a name="-中文文档"></a>
-## 🇨🇳 中文文档
+## 🌟 核心设计哲学 (Design Philosophy)
 
-**YMind Pro Studio** 是一款为深度思考者、知识工程师与科研人员打造的现代化思维图谱工作室。融合了 **Apple Human Interface Guidelines (HIG)** 极简美学设计哲学，兼具顶级性能与全方位的隐私安全。
-
-### ✨ 核心特性
-
-#### 1. 🍏 极致 Apple 美学设计与「三岛屿」流式架构
-* **三岛式流式顶栏**：模式视角岛 `[ 🌳导图 | 📑大纲 | 🎴抽认卡 ]`、纯粹动态节点创作坞 `[ +子主题 | ↵同级 | 📝备注 | 🏷️属性 ]` 与文档状态工具区清晰解耦。
-* **高定视觉体系**：0.62 黄金曲率超椭圆（Squircle）、高斯模糊毛玻璃拟物（`backdrop-filter`）、11 款大师级调色盘（莫兰迪、赛博冷霓等）及 15 款舒适画布背景底纹。
-* **双语排版引擎**：支持本地系统字体自动扫描检测，中文字形与西文字体独立分流配置。
-
-#### 2. ⚡ 万级节点视锥剔除引擎 (Hierarchical Frustum Culling)
-* **10,000+ 节点稳跑 120 FPS**：内置分支级包围盒空间索引（Subtree Bounding Box），`O(1)` 瞬时跳过视口外离屏子树渲染。
-* **极度轻量低开销**：DOM 树活跃元素始终控制在 50~150 个，内存占用骤降 90%（~20MB），彻底消除重排（Reflow）与垃圾回收卡顿。
-* **Apple 微惯性阻尼动力学**：`friction: 0.86` 算法，画布平移与缩放体验紧实跟手。
-
-#### 3. 🧠 深度学习：3D 抽认卡工坊与现场记忆掩码测试
-* **🎴 3D 抽认卡复习 (Alt+F)**：一键将整棵思维导图转化为 Anki 级 3D 翻转卡片，支持 `1/2/3` 掌握度评分与记忆统计。
-* **🎭 画布现场记忆测试 (Alt+R)**：所有子节点一键打上磨砂模糊遮罩，支持点按逐一揭晓与复盘。
-* **📝 节点富文本 / Markdown 备注 (Alt+N)**：右侧滑出磨砂玻璃抽屉，支持代码块高亮、任务待办清单与实时渲染。
-
-#### 4. 💭 自由浮动主题与多根节点网络 (Floating Nodes)
-* **灵感白板自由度**：双击画布任意空白处即可生成独立浮动主题，打破单一根节点约束。
-* **自由拖拽移动**：直接鼠标按住浮动节点在无限画布中自由漫游并自动记忆坐标。
-
-#### 5. 🛡️ 军工级双层信封加密与时光机 (Security & Vault)
-* **双层信封加密 (Envelope Encryption)**：PBKDF2-HMAC-SHA-512（**600,000 次**高抗爆迭代派生 KEK）封装 256 位 DEK 数据主密钥，数据采用带 AAD 认证头部的 **AES-256-GCM**。
-* **毫秒级换密**：修改密码仅需重封 32 字节 DEK，万级节点换密无延迟、零风险。
-* **macOS 沉浸式锁屏海报**：动态 4 段式密码强度条、密码提示、输错密码触发经典 macOS 左右弹性抖动（Shake Animation）。
-* **版本快照时光机 (Ctrl+Shift+H)**：毫秒级定时自动备份 + 随时手动快照，支持无损覆盖还原与断电崩溃防丢。
+* **专注深度思考与知识内化**：拒绝臃肿与信息过载，在极简高雅的 Apple 原生超椭圆（Squircle G2）视觉流中沉浸思考。
+* **100% 离线数据主权 (Local Sovereignty)**：零强制云端同步、零隐私遥测，数据完整储存在用户设备本地沙箱与文件系统。
+* **军工级密码保险箱 (Military-Grade Vault)**：双层信封加密协议，PBKDF2 / Argon2id 密钥派生 + AES-256-GCM 认证加密。
+* **系统级工程可靠性**：热退出（Hot Exit）零数据丢失机制、空间四叉树（QuadTree）亚毫秒检索、16 大子系统 100+ 项全量自动化回归测试保障。
 
 ---
 
-### ⌨️ 快捷键速查表
+## ⚡ 核心系统特性 (Key Architecture Features)
 
-| 快捷键 | 功能操作 | 快捷键 | 功能操作 |
-| :--- | :--- | :--- | :--- |
-| **`Tab`** | 添加子主题 | **`Enter`** | 添加同级分支 |
-| **`Delete` / `Backspace`** | 批量删除选中节点 | **`Space` / `F2`** | 快速编辑当前节点文字 |
-| **`Alt + 1`** | 切换至 思维导图视图 | **`Alt + 2`** | 切换至 线性大纲视图 |
-| **`Alt + F`** | 打开 3D 抽认卡复习工坊 | **`Alt + R`** | 切换 画布现场记忆掩码测试 |
-| **`Alt + N`** | 打开 / 编辑节点 Markdown 备注 | **`Alt + L` / `⌘L`** | 打开 安全加密保险箱 |
-| **`Alt + C`** | 画布智能自适应居中 | **`⌘F` / `Ctrl + F`** | 全局穿透搜索 |
-| **`⌘S` / `Ctrl + S`** | 保存导图文件 | **`⌘Z` / `⌘Y`** | 撤销 / 重做时光机 |
-| **`1` ~ `4`** / **`0`** | 设置 P1~P4 优先级 / 清除 | **双击空白画布** | 新建自由浮动主题 |
+### 1. 🎨 极致 Apple HIG 与全场景超椭圆美学
+* **全场景 G2 超椭圆曲率**：模态卡片、操作岛、标签页及导图节点全面贯彻 `border-radius: 26px; -webkit-corner-smoothing: 0.62;`。
+* **双层高透液态毛玻璃 (Liquid Glass)**：`backdrop-filter: blur(36px) saturate(210%)`，配合微拟物高光边缘与镜面反射光弧。
+* **iOS / visionOS 物理动量进场动效**：`0.36s cubic-bezier(0.16, 1, 0.3, 1)` 弹性回弹，微弹窗（Toast）物理对齐整数像素，杜绝亚像素模糊发虚。
+
+### 2. 🌓 全局黑白双模外观系统 (Dark / Light Theme Engine)
+* **一键无极切换**：顶栏与首页设有一键黑白模式切换按钮，亦可在“偏好设置”中设定浅色明亮、深色黑曜或跟随操作系统自动适配。
+* **画布自适应反显**：切换至深色模式时，画布节点卡片、连线与文字自动适配高对比度冷白（`#f8fafc`），双模均达 WCAG AAA 级视网膜清晰度。
+
+### 3. 💾 工作区热恢复闭环 (Hot Exit & Session Hydration)
+* **无感防抖镜像落盘**：编辑未保存草稿时，后台通过 IndexedDB 异步镜像会话；关闭或重启软件后，上次未关闭的“未命名 1”、“未命名 2”草稿标签原封不动即时复原。
+* **方案 B 物理沙箱纯净度**：首页“最近文档”严格执行物理磁盘绝对路径准入，绝不掺杂未落盘草稿项；保密文档在会话镜像中物理阻断明文树落盘，确保安全无死角。
+
+### 4. 🔒 密码保险箱与画布级精准锁定 (AES-256-GCM Vault)
+* **双层信封加密体系**：随机生成 DEK（数据加密密钥）与 KEK（密钥加密密钥），经由 AAD（附加验证数据）与 GCM Tag 验签阻断一切物理篡改。
+* **多文档自由穿梭**：密码锁屏蒙版精准约束在画布工作区内部，绝不遮挡顶层标签栏。面对锁定文档时，用户依然可以随时在标签栏自由切换至其他明文文档或新建标签页。
+
+### 5. 📝 沉浸式 Markdown 节点备注抽屉 (Rich GFM Engine)
+* **默认预览优先**：呼出备注抽屉默认定位至纯净排版预览界面，空内容状态提供一键开始书写引导卡片。
+* **GFM 深度全家桶支持**：
+  * **H1 ~ H6** 层级标题与优雅分割线（`---`）；
+  * **GFM 响应式表格**：支持左对齐、居中、右对齐与斑马纹高光；
+  * **Callout 提示卡片**：`> [!TIP]`、`> [!NOTE]`、`> [!WARNING]`、`> [!DANGER]` 现代彩色警示块；
+  * **交互式待办清单**：预览态直接点击复选框即可即时回写 Markdown 源码并落盘保存；
+  * **高亮重点与删除线**：`==高亮文字==`、`~~删除线~~`；
+  * **代码块一键复制**：语言标徽与右侧快速复制按键；
+  * **自适应换行工具栏**：按钮智能流式排布，在任意侧边栏宽度下 100% 完整展示。
+
+### 6. 📐 四大经典思维骨架与 20 款大师配色
+* **4 款逻辑骨架**：经典双向导图（左右平衡）、向右逻辑推导图、向左逆向归因图、纵向组织架构图。
+* **色彩与纹理矩阵**：20 款调色盘色阶、15 款精研画布底色、15 款工程网格与几何底纹（点阵、方格、蓝图、等距网格、蜂巢等）。
+
+### 7. 🧠 认知科学主动复盘双引擎
+* **🎴 3D 抽认卡复习工坊 (`Alt+F`)**：基于艾宾浩斯遗忘曲线，将导图层级无损转换为双面 3D 空间翻转卡片，支持掌握度评分统计与反馈。
+* **🎭 现场记忆掩码测试 (`Alt+R`)**：画布子分支秒变高斯磨砂遮罩，鼠标轻点即时揭晓，随时随地进行主动提取自测。
+* **📑 线性大纲文档视图 (`Alt+2`)**：双向毫秒级数据同步，支持无限层级缩进与长文排版汇报。
 
 ---
 
-### 📁 项目工程目录
+## ⌨️ 常用快捷键速查表 (Keyboard Shortcuts)
+
+| 类别 | 快捷键 (macOS / Windows) | 功能描述 |
+| :--- | :--- | :--- |
+| **节点编辑** | `Tab` | 新增子级主题并聚焦编辑 |
+| | `Enter` | 新增同级主题并聚焦编辑 |
+| | `F2` 或 `Space` | 就地呼出行内文本编辑器 |
+| | `Delete` / `Backspace` | 删除选中节点分支（根节点受保护） |
+| | `↑` `↓` `←` `→` | 树分支相对坐标穿透导航 |
+| **视图模式** | `Alt + 1` | 切换为思维导图视图 |
+| | `Alt + 2` | 切换为 Markdown 大纲文档视图 |
+| | `Alt + F` | 呼出 3D 记忆抽认卡复习工坊 |
+| | `Alt + R` | 开启 / 退出画布现场记忆掩码模式 |
+| | `Alt + N` | 呼出 / 收起节点 Markdown 详细备注抽屉 |
+| | `Alt + L` | 设定密码保险箱 / 立即安全锁定 |
+| | `Alt + C` | 画布智能自适应居中全景复位 |
+| | `Esc` | 收起浮层 / 退出专注模式 / 首页返回工作区 |
+| **全局操作** | `⌘F` / `Ctrl + F` | 全局穿透检索（跨节点、标签、优先级与备注） |
+| | `⌘S` / `Ctrl + S` | 保存导图并落盘至物理文件 |
+| | `⌘O` / `Ctrl + O` | 打开本地 `.ymind` / `.xmind` / `.json` 文件 |
+| | `⌘Z` / `Ctrl + Z` | 撤销上一步操作（结构化命令栈） |
+| | `⌘Y` / `Ctrl + Shift + Z` | 重做恢复操作 |
+| | `Ctrl + Shift + H` | 打开内嵌版本快照时光机 |
+
+---
+
+## 📂 项目模块解耦目录树 (Module Structure)
 
 ```text
-ymind-pro-studio/
-├── src/
-│   ├── index.html            # 单页核心宿主与 Apple 模态视图层
-│   ├── style.css             # 模块化样式聚合入口
-│   ├── main.js               # 应用程序全局装配生命周期
-│   ├── css/                  # Apple HIG 模块化样式架构
-│   │   ├── base.css          # 全局变量、排版与 Reset
-│   │   ├── themes.css        # 15 款舒适画布底纹矩阵
-│   │   ├── workspace.css     # 三岛式顶栏、画布与大纲排版
-│   │   └── dialogs.css       # 抽屉、模态弹窗、3D 抽认卡与锁屏海报
-│   └── js/
-│       ├── core/             # 核心架构 (Camera, State, Serializer, Tabs)
-│       ├── geometry/         # 空间几何计算 (Layout, Squircle, Lines)
-│       ├── render/           # 渲染引擎 (Frustum Culling Render, Minimap, Outliner)
-│       ├── storage/          # 数据与加密 (Envelope Crypto, Snapshot Machine)
-│       ├── ui/               # 交互组件 (Vault, Notes, Flashcards, Search, Settings)
-│       └── data/             # 静态预设 (Palettes, Icons, Templates)
+src/
+├── css/                     # Apple visionOS 样式体系
+│   ├── base.css             # 全局排版、滚动条与 [data-theme="dark"] 设计令牌
+│   ├── workspace.css        # 顶栏毛玻璃、操作岛、标签栏、大纲与视口布局
+│   ├── home.css             # 启动工作台、模板中心、最近物理文件画廊
+│   ├── inspector.css        # 格式检查器、结构切换与配色面板
+│   ├── dialogs.css          # 超椭圆模态框、灵动Toast、锁屏海报、抽认卡与备注抽屉
+│   └── themes.css           # 15款画布底色与15款几何底纹CSS规则
+├── js/
+│   ├── core/                # 核心运行时引擎
+│   │   ├── state.js         # 单一状态源、Tab代理Schema与响应式监听
+│   │   ├── history.js       # 结构化撤销重做流水线 (COMMANDS & SNAPSHOT)
+│   │   ├── camera.js        # 视口变换、对数阻尼缩放与弹簧动力学定位
+│   │   ├── serializer.js    # .ymind / XMind原生ZIP逆向流解密与文件序列化
+│   │   ├── tab-manager.js   # 多标签页生命周期、未落盘保护与脏状态管理
+│   │   ├── config.js        # 全局字体、主题模式持久化与系统匹配引擎
+│   │   ├── event-bus.js     # 发布-订阅解耦事件总线
+│   │   └── tree-utils.js    # 拓扑寻亲、全树计数、祖先溯源与脏数据脱敏
+│   ├── geometry/            # 数学与空间几何引擎
+│   │   ├── layout.js        # 四大思维骨架非递归显式栈排版算法
+│   │   ├── spatial-tree.js  # 空间四叉树 (QuadTree) 毫秒级视口拾取索引
+│   │   └── squircle.js      # G2连续Apple原生超椭圆贝塞尔几何算子
+│   ├── storage/             # 本地存储与密码学沙箱
+│   │   ├── crypto.js        # PBKDF2/Argon2id + AES-256-GCM双层信封加密
+│   │   ├── session.js       # 工作区热恢复 (Hot Exit) 自动镜像引擎
+│   │   ├── idb.js           # IndexedDB百兆级持久化驱动 (drafts & snapshots)
+│   │   └── storage.js       # 随身时光机快照与自动定时备份引擎
+│   ├── ui/                  # 界面交互与视图控制器
+│   │   ├── events.js        # 画布拖拽挂载重排、框选与文件导入导出
+│   │   ├── home.js          # 方案B纯净物理文档列表管理与收藏置顶
+│   │   ├── inspector.js     # 格式检查器单源配置与样式双向绑定
+│   │   ├── vault.js         # 密码锁屏、多文档穿透与主密码安全配置
+│   │   ├── notes.js         # 备注预览优先与GFM富文本Markdown增强引擎
+│   │   ├── flashcards.js    # 3D翻转抽认卡工作坊控制逻辑
+│   │   ├── settings.js      # 独立偏好设置大页面交互控制器
+│   │   ├── dialog.js        # Apple灵动岛Toast、系统模态框与转义工具
+│   │   ├── search.js        # 全局穿透检索与祖先折叠自动解开
+│   │   └── icon-picker.js   # 200+分类专属图标点选面板
+│   ├── render/              # 视图渲染管线
+│   │   ├── render.js        # Canvas 2D多遍绘制、批处理连线与行内编辑器
+│   │   ├── node-drawer.js   # 节点高定卡片、图标、优先级徽标与文本排版
+│   │   ├── minimap.js       # 视网膜全景小地图与视口同步
+│   │   └── outliner.js      # 虚拟滚动现代化大纲排版引擎
+│   ├── data/                # 常量元数据
+│   │   ├── palettes.js      # 20款大师级配色、15款底色与15款底纹单源字典
+│   │   ├── icons.js         # 7大分类图标微型DSL字典
+│   │   └── templates.js     # 20款覆盖敏捷工程、商业战略与学习方法的模板
+│   └── test/                # 自动化质量保证体系
+│       └── test-runner.js   # 16大子系统 100+项断言极密全量测试套件
+├── main.js                  # 应用入口装配、自愈水合与全局事件总线绑定
+└── index.html               # 骨架结构与高定超椭圆模态DOM模板
